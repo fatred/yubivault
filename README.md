@@ -41,3 +41,11 @@ $ yubivault -yubi
 PIN for 12345678: 
 s.LtSpaGkxDq0Nrrrxlolasdfsasfdsw
 ```
+
+
+### Credits
+
+Needed a lot of help along the way. These were helpful
+
+* an example of using the Thales pkcs11 crypto library to access the certs/keys off a smartcard: https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9
+* the official p11tool from Thales: https://github.com/thales-e-security/p11tool
