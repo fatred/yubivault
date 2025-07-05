@@ -1,6 +1,6 @@
 # yubivault
 
-simple binary that will use a local cert/key pair on disk or on a yubikey (tbc) to login to vault and give you a token for subesequent use in automations etc.
+simple binary that will use a local cert/key pair on disk or on a yubikey to login to vault and give you a token for subesequent use in automations etc.
 
 ## PreReqs
 
@@ -23,6 +23,7 @@ yubikeyPivIndex: 0
 ```
 
 4a. for local auth: put valid cert/key pair into that path
+
 4b. for yubi auth: put your key into your laptop and run the command as below
 
 
