@@ -20,6 +20,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var Version = "dev"
+
 type AppConfig struct {
 	VaultAddr        string `yaml:"vaultAddr"`
 	CertAuthName     string `yaml:"certAuthName"`
@@ -198,7 +200,13 @@ func main() {
 	ctx := context.Background()
 	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.vault/client-cert.pem|key")
 	yubikeyFlag := flag.Bool("yubi", false, "User cert and key stored in a yubikey only")
+	versionFlag := flag.Bool("version", false, "Show version")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
 
 	homeDir, _ := os.UserHomeDir()
 	appConfig, err := LoadConfig(homeDir)
