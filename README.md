@@ -4,6 +4,9 @@ simple binary that will use a local cert/key pair on disk or on a yubikey to log
 
 ## PreReqs
 
+0. install opensc 
+  a. macOS: `brew install opensc`
+  b. linux: `apt install opensc` # or whatever your package manager is...
 1. Make a folder called `mkdir -p ~/.vault`
 2. Chown that to you only `chown -R 700 ~/.vault`
 3. Make a config file:
@@ -16,6 +19,8 @@ certAuthMount: network_admin
 certAuthPemFile: client-cert.pem
 certAuthKeyFile: client-cert.key
 openscPath: "/opt/homebrew/Cellar/opensc/0.26.1/lib/pkcs11/opensc-pkcs11.so"
+# debian
+# openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
 yubikeySerial: "12345678"
 yubikeyPivSerial: "1234567890123456"
 yubikeyPivLabel: "jhow-yubikey-12345678"
@@ -24,8 +29,9 @@ yubikeyPivIndex: 0
 
 4a. for local auth: put valid cert/key pair into that path
 
-4b. for yubi auth: put your key into your laptop and run the command as below
-
+4b. for yubi auth: 
+  i) configure the parameters based on the output from `p11tool  --list-tokens`.
+  ii) configure the opensc path based on the package managers outputs. e.g. `brew info opensc` or check your package manager repo like so: https://packages.debian.org/trixie/amd64/opensc-pkcs11/filelist
 
 ## How it works
 
