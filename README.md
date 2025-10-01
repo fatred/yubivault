@@ -7,8 +7,8 @@ simple binary that will use a local cert/key pair on disk or on a yubikey to log
 0. install opensc 
   a. macOS: `brew install opensc`
   b. linux: `apt install opensc` # or whatever your package manager is...
-1. Make a folder called `mkdir -p ~/.vault`
-2. Chown that to you only `chown -R 700 ~/.vault`
+1. Make a folder called `mkdir -p ~/.yubivault`
+2. Chown that to you only `chown -R 700 ~/.yubivault`
 3. Make a config file:
 
 ```yaml
