@@ -57,7 +57,7 @@ func (c *RealVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[
 
 func LoadConfig(homeDir string) (*AppConfig, error) {
 	appConfig := &AppConfig{}
-	file, err := os.Open(homeDir + "/.vault/config.yml")
+	file, err := os.Open(homeDir + "/.yubivault/config.yml")
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +71,8 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*vault.Client, error) {
 	tlsConfig := vault.TLSConfiguration{}
-	tlsConfig.ClientCertificate.FromFile = homeDir + "/.vault/" + appConfig.CertAuthPemFile
-	tlsConfig.ClientCertificateKey.FromFile = homeDir + "/.vault/" + appConfig.CertAuthKeyFile
+	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
+	tlsConfig.ClientCertificateKey.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
 		vault.WithTLS(tlsConfig),
@@ -198,7 +198,7 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 
 func main() {
 	ctx := context.Background()
-	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.vault/client-cert.pem|key")
+	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
 	yubikeyFlag := flag.Bool("yubi", false, "User cert and key stored in a yubikey only")
 	versionFlag := flag.Bool("version", false, "Show version")
 	flag.Parse()

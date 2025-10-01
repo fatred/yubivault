@@ -114,7 +114,7 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 func TestLoadConfig_ValidFile(t *testing.T) {
 	// Setup: create a temp config file
 	dir := t.TempDir()
-	configPath := dir + "/.vault"
+	configPath := dir + "/.yubivault"
 	os.Mkdir(configPath, 0755)
 	file := configPath + "/config.yml"
 	content := []byte(`vaultAddr: "http://localhost:8200"
