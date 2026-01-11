@@ -141,7 +141,7 @@ func TestReadPin_Mock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if pin != "123456\n" {
+	if pin != "123456" {
 		t.Errorf("expected pin '123456\\n', got %q", pin)
 	}
 }

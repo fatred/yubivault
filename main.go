@@ -216,7 +216,7 @@ func ReadPin(yubikeySerial string, r io.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return string(bPin), nil
+		return strings.TrimSpace(string(bPin)), nil
 	}
 	bPin := make([]byte, 64)
 	n, err := r.Read(bPin)
@@ -224,7 +224,7 @@ func ReadPin(yubikeySerial string, r io.Reader) (string, error) {
 	if err != nil && err != io.EOF {
 		return "", err
 	}
-	return string(bPin[:n]), nil
+	return strings.TrimSpace(string(bPin[:n])), nil
 }
 
 func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx context.Context) (string, error) {
