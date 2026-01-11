@@ -121,41 +121,59 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 	return &LocalVaultClient{VaultClient: client}, nil
 }
 
-func CreateYubikeyVaultClient(appConfig *AppConfig) (*vault.Client, *crypto11.Context, error) {
+func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error) {
+	var err error
+	var cryptoCtx *crypto11.Context
+
 	tokenPin := os.Getenv("TOKEN_PIN")
 	if tokenPin == "" {
-		var err error
 		tokenPin, err = ReadPin(appConfig.YubikeySerial, os.Stdin)
 		if err != nil {
-			return nil, nil, fmt.Errorf("could not read PIN code: %w", err)
+			return nil, fmt.Errorf("could not read PIN code: %w", err)
 		}
 		tokenPin = strings.TrimSpace(tokenPin)
 		if tokenPin == "" {
-			return nil, nil, fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
+			return nil, fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
 		}
 	}
 
-	cryptoCtx, err := crypto11.Configure(&crypto11.Config{
+	cryptoCtx, err = crypto11.Configure(&crypto11.Config{
 		Path:        appConfig.OpenScPath,
 		TokenSerial: appConfig.YubikeyPivSerial,
 		Pin:         tokenPin,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not configure crypto11: %w", err)
+		return nil, fmt.Errorf("could not configure crypto11: %w", err)
 	}
 
+	// CRITICAL: Deferred cleanup ensures crypto11.Context is closed on ANY error path.
+	// On success, the context is transferred to YubikeyVaultClient which owns it.
+	// This prevents resource leaks that can lock the YubiKey.
+	defer func() {
+		if err != nil && cryptoCtx != nil {
+			cryptoCtx.Close()
+		}
+	}()
+
 	kps, err := cryptoCtx.FindAllKeyPairs()
-	if err != nil || len(kps) == 0 {
-		return nil, cryptoCtx, fmt.Errorf("failed to find key pairs: %v", err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find key pairs: %w", err)
+	}
+	if len(kps) == 0 {
+		return nil, fmt.Errorf("no key pairs found on YubiKey")
 	}
 	if appConfig.YubikeyPivIndex >= len(kps) {
-		return nil, cryptoCtx, fmt.Errorf("yubikeyPivIndex %d out of range", appConfig.YubikeyPivIndex)
+		return nil, fmt.Errorf("yubikeyPivIndex %d out of range (found %d key pairs)", appConfig.YubikeyPivIndex, len(kps))
 	}
 	signer := kps[appConfig.YubikeyPivIndex]
 
 	certs, err := cryptoCtx.FindAllPairedCertificates()
 	if err != nil {
-		return nil, cryptoCtx, fmt.Errorf("could not search for certificates: %w", err)
+		return nil, fmt.Errorf("could not search for certificates: %w", err)
+	}
+	// Array bounds check: prevent panic if no certificates found
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no paired certificates found on YubiKey")
 	}
 	cert := certs[0]
 
@@ -183,9 +201,11 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*vault.Client, *crypto11.Co
 		vault.WithHTTPClient(customClient),
 	)
 	if err != nil {
-		return nil, cryptoCtx, fmt.Errorf("failed to create Vault client: %w", err)
+		return nil, fmt.Errorf("failed to create Vault client: %w", err)
 	}
-	return client, cryptoCtx, nil
+
+	// Success: return wrapped client with context ownership transferred
+	return &YubikeyVaultClient{VaultClient: client, cryptoCtx: cryptoCtx}, nil
 }
 
 func ReadPin(yubikeySerial string, r io.Reader) (string, error) {
