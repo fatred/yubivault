@@ -160,3 +160,16 @@ func TestLocalVaultClient_Interface(t *testing.T) {
 		t.Errorf("Close returned error: %v", err)
 	}
 }
+
+func TestYubikeyVaultClient_Interface(t *testing.T) {
+	// Verify YubikeyVaultClient satisfies VaultAuthClient
+	var _ VaultAuthClient = (*YubikeyVaultClient)(nil)
+}
+
+func TestYubikeyVaultClient_CloseNil(t *testing.T) {
+	// Edge case: Close with nil context should not panic
+	client := &YubikeyVaultClient{cryptoCtx: nil}
+	if err := client.Close(); err != nil {
+		t.Errorf("Close with nil context failed: %v", err)
+	}
+}
