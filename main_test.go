@@ -173,3 +173,54 @@ func TestYubikeyVaultClient_CloseNil(t *testing.T) {
 		t.Errorf("Close with nil context failed: %v", err)
 	}
 }
+
+func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupEnv   func()
+		cleanupEnv func()
+		appConfig  *AppConfig
+		expectErr  string
+	}{
+		{
+			name:       "empty PIN from environment",
+			setupEnv:   func() { os.Unsetenv("TOKEN_PIN") },
+			cleanupEnv: func() {},
+			appConfig: &AppConfig{
+				YubikeySerial: "12345",
+			},
+			expectErr: "could not read PIN code",
+		},
+		{
+			name:     "invalid OpenSC path",
+			setupEnv: func() { os.Setenv("TOKEN_PIN", "123456") },
+			cleanupEnv: func() { os.Unsetenv("TOKEN_PIN") },
+			appConfig: &AppConfig{
+				OpenScPath:       "/nonexistent/path.so",
+				YubikeyPivSerial: "invalid",
+				YubikeySerial:    "12345",
+			},
+			expectErr: "could not configure crypto11",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupEnv != nil {
+				tt.setupEnv()
+				defer tt.cleanupEnv()
+			}
+
+			client, err := CreateYubikeyVaultClient(tt.appConfig)
+
+			if err == nil {
+				defer client.Close()
+				t.Fatal("expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.expectErr) {
+				t.Errorf("expected error containing %q, got %q", tt.expectErr, err)
+			}
+		})
+	}
+}
