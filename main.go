@@ -41,6 +41,19 @@ type VaultAuthClient interface {
 	io.Closer
 }
 
+// LocalVaultClient wraps a Vault client for filesystem-based certificate auth
+type LocalVaultClient struct {
+	VaultClient *vault.Client
+}
+
+func (c *LocalVaultClient) GetVaultClient() *vault.Client {
+	return c.VaultClient
+}
+
+func (c *LocalVaultClient) Close() error {
+	return nil // no resources to clean up for local auth
+}
+
 type VaultClient interface {
 	CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error)
 	SetToken(token string) error
