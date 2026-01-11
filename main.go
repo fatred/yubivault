@@ -265,31 +265,31 @@ func main() {
 		os.Exit(0)
 	}
 
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
 	appConfig, err := LoadConfig(homeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if (!*localFlag && !*yubikeyFlag) || (*localFlag && *yubikeyFlag) {
-		log.Fatal("Pick -local or -yubi next time")
-		os.Exit(-1)
+		log.Fatal("Pick -local or -yubi")
 	}
 
-	var client *vault.Client
-	var cryptoCtx *crypto11.Context
+	var authClient VaultAuthClient
 	if *localFlag {
-		client, err = CreateLocalVaultClient(appConfig, homeDir)
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else if *yubikeyFlag {
-		client, cryptoCtx, err = CreateYubikeyVaultClient(appConfig)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer cryptoCtx.Close()
+		authClient, err = CreateLocalVaultClient(appConfig, homeDir)
+	} else {
+		authClient, err = CreateYubikeyVaultClient(appConfig)
+	}
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	defer authClient.Close()
+
+	client := authClient.GetVaultClient()
 	vaultClient := &RealVaultClient{Client: client}
 	token, err := AuthenticateAndGetToken(vaultClient, appConfig, ctx)
 	if err != nil {
