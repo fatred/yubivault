@@ -54,6 +54,24 @@ func (c *LocalVaultClient) Close() error {
 	return nil // no resources to clean up for local auth
 }
 
+// YubikeyVaultClient wraps both Vault client and crypto11.Context
+// ensuring PKCS#11 resources are properly cleaned up
+type YubikeyVaultClient struct {
+	VaultClient *vault.Client
+	cryptoCtx   *crypto11.Context // unexported, owned by this struct
+}
+
+func (c *YubikeyVaultClient) GetVaultClient() *vault.Client {
+	return c.VaultClient
+}
+
+func (c *YubikeyVaultClient) Close() error {
+	if c.cryptoCtx != nil {
+		return c.cryptoCtx.Close()
+	}
+	return nil
+}
+
 type VaultClient interface {
 	CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error)
 	SetToken(token string) error
