@@ -106,7 +106,7 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	return appConfig, nil
 }
 
-func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*vault.Client, error) {
+func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
 	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
 	tlsConfig.ClientCertificateKey.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
@@ -118,7 +118,7 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*vault.Client
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+	return &LocalVaultClient{VaultClient: client}, nil
 }
 
 func CreateYubikeyVaultClient(appConfig *AppConfig) (*vault.Client, *crypto11.Context, error) {
