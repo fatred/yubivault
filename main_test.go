@@ -145,3 +145,18 @@ func TestReadPin_Mock(t *testing.T) {
 		t.Errorf("expected pin '123456\\n', got %q", pin)
 	}
 }
+
+func TestLocalVaultClient_Interface(t *testing.T) {
+	// Verify LocalVaultClient satisfies VaultAuthClient
+	var _ VaultAuthClient = (*LocalVaultClient)(nil)
+
+	client := &LocalVaultClient{VaultClient: &vault.Client{}}
+
+	if client.GetVaultClient() == nil {
+		t.Error("GetVaultClient returned nil")
+	}
+
+	if err := client.Close(); err != nil {
+		t.Errorf("Close returned error: %v", err)
+	}
+}
