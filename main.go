@@ -35,6 +35,12 @@ type AppConfig struct {
 	YubikeyPivIndex  int    `yaml:"yubikeyPivIndex"`
 }
 
+// VaultAuthClient provides a unified interface for both local and YubiKey auth modes
+type VaultAuthClient interface {
+	GetVaultClient() *vault.Client
+	io.Closer
+}
+
 type VaultClient interface {
 	CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error)
 	SetToken(token string) error
