@@ -31,8 +31,7 @@ type AppConfig struct {
 	OpenScPath       string `yaml:"openscPath"`
 	YubikeySerial    string `yaml:"yubikeySerial"`
 	YubikeyPivSerial string `yaml:"yubikeyPivSerial"`
-	YubikeyPivLabel  string `yaml:"yubikeyPivLabel"`
-	YubikeyPivIndex  int    `yaml:"yubikeyPivIndex"`
+	YubikeyCertCN    string `yaml:"yubikeyCertCN"`
 }
 
 // VaultAuthClient provides a unified interface for both local and YubiKey auth modes
@@ -215,32 +214,15 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error)
 		}
 	}()
 
-	kps, err := cryptoCtx.FindAllKeyPairs()
-	if err != nil {
-		return nil, fmt.Errorf("failed to find key pairs: %w", err)
-	}
-	if len(kps) == 0 {
-		return nil, fmt.Errorf("no key pairs found on YubiKey")
-	}
-	if appConfig.YubikeyPivIndex < 0 || appConfig.YubikeyPivIndex >= len(kps) {
-		return nil, fmt.Errorf("yubikeyPivIndex %d out of range (found %d key pairs)", appConfig.YubikeyPivIndex, len(kps))
-	}
-	signer := kps[appConfig.YubikeyPivIndex]
-
-	certs, err := cryptoCtx.FindAllPairedCertificates()
+	// crypto11 pairs each private key with its certificate by CKA_ID (the PIV slot),
+	// so every returned tls.Certificate already has the correct key+cert bound together.
+	pairs, err := cryptoCtx.FindAllPairedCertificates()
 	if err != nil {
 		return nil, fmt.Errorf("could not search for certificates: %w", err)
 	}
-	// Array bounds check: prevent panic if no certificates found
-	if len(certs) == 0 {
-		return nil, fmt.Errorf("no paired certificates found on YubiKey")
-	}
-	cert := certs[0]
-
-	tlsCert := tls.Certificate{
-		Certificate: cert.Certificate,
-		PrivateKey:  signer,
-		Leaf:        cert.Leaf,
+	tlsCert, err := selectCertificate(pairs, appConfig.YubikeyCertCN)
+	if err != nil {
+		return nil, err
 	}
 
 	tlsConfig := &tls.Config{
