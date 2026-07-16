@@ -23,8 +23,9 @@ openscPath: "/opt/homebrew/Cellar/opensc/0.26.1/lib/pkcs11/opensc-pkcs11.so"
 # openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
 yubikeySerial: "12345678"
 yubikeyPivSerial: "1234567890123456"
-yubikeyPivLabel: "jhow-yubikey-12345678"
-yubikeyPivIndex: 0
+# optional: only needed when the card holds more than one credential.
+# Set it to the certificate Subject CN of the credential you want.
+# yubikeyCertCN: "network_admin_g2"
 ```
 
 4a. for local auth: put valid cert/key pair into that path
