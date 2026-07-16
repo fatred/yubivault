@@ -1,8 +1,6 @@
 module github.com/fatred/yubivault
 
-go 1.23.6
-
-toolchain go1.24.4
+go 1.26.0
 
 require github.com/hashicorp/vault-client-go v0.4.3
 
