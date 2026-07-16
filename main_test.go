@@ -227,8 +227,8 @@ func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
 			expectErr: "could not read PIN code",
 		},
 		{
-			name:     "invalid OpenSC path",
-			setupEnv: func() { os.Setenv("TOKEN_PIN", "123456") },
+			name:       "invalid OpenSC path",
+			setupEnv:   func() { os.Setenv("TOKEN_PIN", "123456") },
 			cleanupEnv: func() { os.Unsetenv("TOKEN_PIN") },
 			appConfig: &AppConfig{
 				OpenScPath:       "/nonexistent/path.so",
