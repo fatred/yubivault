@@ -135,6 +135,34 @@ certAuthMount: "cert"
 	}
 }
 
+func TestLoadConfig_RejectsMissingAuthFields(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/.yubivault"
+	os.Mkdir(configPath, 0755)
+	// vaultAddr present but certAuth fields missing
+	os.WriteFile(configPath+"/config.yml", []byte(`vaultAddr: "https://localhost:8200"`+"\n"), 0644)
+
+	_, err := LoadConfig(dir)
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected required-fields error, got %v", err)
+	}
+}
+
+func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
+	dir := t.TempDir()
+	os.Mkdir(dir+"/.yubivault", 0755)
+	os.WriteFile(dir+"/.yubivault/client-cert.key", []byte("dummy"), 0644)
+
+	appConfig := &AppConfig{
+		VaultAddr:       "https://localhost:8200",
+		CertAuthPemFile: "client-cert.pem",
+		CertAuthKeyFile: "client-cert.key",
+	}
+	if _, err := CreateLocalVaultClient(appConfig, dir); err == nil || !strings.Contains(err.Error(), "group/other") {
+		t.Errorf("expected permissions error, got %v", err)
+	}
+}
+
 func TestReadPin_Mock(t *testing.T) {
 	input := bytes.NewBufferString("123456\n")
 	pin, err := ReadPin("1234567", input)

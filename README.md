@@ -8,7 +8,7 @@ simple binary that will use a local cert/key pair on disk or on a yubikey to log
   a. macOS: `brew install opensc`
   b. linux: `apt install opensc` # or whatever your package manager is...
 1. Make a folder called `mkdir -p ~/.yubivault`
-2. Chown that to you only `chown -R 700 ~/.yubivault`
+2. Restrict it to you only `chmod 700 ~/.yubivault` (and `chmod 600` the key file)
 3. Make a config file:
 
 ```yaml

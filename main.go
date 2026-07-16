@@ -103,13 +103,30 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	if err := decoder.Decode(&appConfig); err != nil {
 		return nil, err
 	}
+	// Reject incomplete config up front rather than producing confusing
+	// downstream errors. Scheme is not enforced: cert-login needs a TLS
+	// handshake, so an http:// endpoint fails safely on its own, and local
+	// dev Vault (http://localhost:8200) stays usable.
+	if appConfig.VaultAddr == "" {
+		return nil, fmt.Errorf("vaultAddr is required")
+	}
+	if appConfig.CertAuthName == "" || appConfig.CertAuthMount == "" {
+		return nil, fmt.Errorf("certAuthName and certAuthMount are required")
+	}
 	return appConfig, nil
 }
 
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
 	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
-	tlsConfig.ClientCertificateKey.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
+	keyPath := homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
+	tlsConfig.ClientCertificateKey.FromFile = keyPath
+	// Refuse to use a private key that group/other can read (fail-secure).
+	if info, err := os.Stat(keyPath); err != nil {
+		return nil, fmt.Errorf("could not stat key file: %w", err)
+	} else if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("private key %s is accessible by group/other (mode %#o); run: chmod 600 %s", keyPath, info.Mode().Perm(), keyPath)
+	}
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
 		vault.WithTLS(tlsConfig),
@@ -162,7 +179,7 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error)
 	if len(kps) == 0 {
 		return nil, fmt.Errorf("no key pairs found on YubiKey")
 	}
-	if appConfig.YubikeyPivIndex >= len(kps) {
+	if appConfig.YubikeyPivIndex < 0 || appConfig.YubikeyPivIndex >= len(kps) {
 		return nil, fmt.Errorf("yubikeyPivIndex %d out of range (found %d key pairs)", appConfig.YubikeyPivIndex, len(kps))
 	}
 	signer := kps[appConfig.YubikeyPivIndex]
