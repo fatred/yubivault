@@ -138,6 +138,49 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 	return &LocalVaultClient{VaultClient: client}, nil
 }
 
+// selectCertificate picks one paired credential from the card. With no wantCN and exactly
+// one pair, that pair is used. Otherwise the pair whose certificate Subject CommonName
+// equals wantCN is used. Ambiguity or no match is an error that names the fix. Selection is
+// on the parsed x509 cert (reliable), never on PKCS#11 labels.
+func selectCertificate(pairs []tls.Certificate, wantCN string) (tls.Certificate, error) {
+	if len(pairs) == 0 {
+		return tls.Certificate{}, fmt.Errorf("no paired credentials found on YubiKey")
+	}
+	if wantCN == "" {
+		if len(pairs) == 1 {
+			return pairs[0], nil
+		}
+		return tls.Certificate{}, fmt.Errorf("multiple credentials on card; set yubikeyCertCN to one of: %s", certCNs(pairs))
+	}
+	var matches []tls.Certificate
+	for _, p := range pairs {
+		if p.Leaf != nil && p.Leaf.Subject.CommonName == wantCN {
+			matches = append(matches, p)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return tls.Certificate{}, fmt.Errorf("no credential with CN %q; available: %s", wantCN, certCNs(pairs))
+	default:
+		return tls.Certificate{}, fmt.Errorf("multiple credentials with CN %q on card; cannot disambiguate", wantCN)
+	}
+}
+
+// certCNs renders the Subject CommonNames of the paired certs for error messages.
+func certCNs(pairs []tls.Certificate) string {
+	names := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		if p.Leaf == nil {
+			names = append(names, "<no leaf>")
+			continue
+		}
+		names = append(names, fmt.Sprintf("%q", p.Leaf.Subject.CommonName))
+	}
+	return strings.Join(names, ", ")
+}
+
 func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error) {
 	var err error
 	var cryptoCtx *crypto11.Context
