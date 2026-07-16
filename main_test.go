@@ -153,8 +153,12 @@ func TestLoadConfig_RejectsMissingAuthFields(t *testing.T) {
 
 func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 	dir := t.TempDir()
-	os.Mkdir(dir+"/.yubivault", 0755)
-	os.WriteFile(dir+"/.yubivault/client-cert.key", []byte("dummy"), 0644)
+	dotDir := dir + "/.yubivault"
+	os.Mkdir(dotDir, 0700)
+	os.Chmod(dotDir, 0700) // match documented ~/.yubivault perms, defeat umask
+	keyPath := dotDir + "/client-cert.key"
+	os.WriteFile(keyPath, []byte("dummy"), 0644)
+	os.Chmod(keyPath, 0644) // defeat umask so the test actually exercises the rejection path
 
 	appConfig := &AppConfig{
 		VaultAddr:       "https://localhost:8200",
