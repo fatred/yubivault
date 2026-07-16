@@ -16,17 +16,17 @@ jobs:
         goarch: [amd64]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          go-version: '1.26'
       - name: Build binary
         run: |
           mkdir -p dist
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "-X 'main.Version=${{ github.ref_name }}'" -o dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
       - name: Generate changelog
