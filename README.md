@@ -18,7 +18,7 @@ certAuthName: network_admin_g2
 certAuthMount: network_admin
 certAuthPemFile: client-cert.pem
 certAuthKeyFile: client-cert.key
-openscPath: "/opt/homebrew/Cellar/opensc/0.26.1/lib/pkcs11/opensc-pkcs11.so"
+openscPath: "/opt/homebrew/Cellar/opensc/0.27.1/lib/pkcs11/opensc-pkcs11.so"
 # debian
 # openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
 yubikeySerial: "12345678"
