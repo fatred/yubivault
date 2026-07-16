@@ -31,8 +31,7 @@ type AppConfig struct {
 	OpenScPath       string `yaml:"openscPath"`
 	YubikeySerial    string `yaml:"yubikeySerial"`
 	YubikeyPivSerial string `yaml:"yubikeyPivSerial"`
-	YubikeyPivLabel  string `yaml:"yubikeyPivLabel"`
-	YubikeyPivIndex  int    `yaml:"yubikeyPivIndex"`
+	YubikeyCertCN    string `yaml:"yubikeyCertCN"`
 }
 
 // VaultAuthClient provides a unified interface for both local and YubiKey auth modes
@@ -103,13 +102,30 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	if err := decoder.Decode(&appConfig); err != nil {
 		return nil, err
 	}
+	// Reject incomplete config up front rather than producing confusing
+	// downstream errors. Scheme is not enforced: cert-login needs a TLS
+	// handshake, so an http:// endpoint fails safely on its own, and local
+	// dev Vault (http://localhost:8200) stays usable.
+	if appConfig.VaultAddr == "" {
+		return nil, fmt.Errorf("vaultAddr is required")
+	}
+	if appConfig.CertAuthName == "" || appConfig.CertAuthMount == "" {
+		return nil, fmt.Errorf("certAuthName and certAuthMount are required")
+	}
 	return appConfig, nil
 }
 
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
 	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
-	tlsConfig.ClientCertificateKey.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
+	keyPath := homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
+	tlsConfig.ClientCertificateKey.FromFile = keyPath
+	// Refuse to use a private key that group/other can read (fail-secure).
+	if info, err := os.Stat(keyPath); err != nil {
+		return nil, fmt.Errorf("could not stat key file: %w", err)
+	} else if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("private key %s is accessible by group/other (mode %#o); run: chmod 600 %s", keyPath, info.Mode().Perm(), keyPath)
+	}
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
 		vault.WithTLS(tlsConfig),
@@ -119,6 +135,49 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 		return nil, err
 	}
 	return &LocalVaultClient{VaultClient: client}, nil
+}
+
+// selectCertificate picks one paired credential from the card. With no wantCN and exactly
+// one pair, that pair is used. Otherwise the pair whose certificate Subject CommonName
+// equals wantCN is used. Ambiguity or no match is an error that names the fix. Selection is
+// on the parsed x509 cert (reliable), never on PKCS#11 labels.
+func selectCertificate(pairs []tls.Certificate, wantCN string) (tls.Certificate, error) {
+	if len(pairs) == 0 {
+		return tls.Certificate{}, fmt.Errorf("no paired credentials found on YubiKey")
+	}
+	if wantCN == "" {
+		if len(pairs) == 1 {
+			return pairs[0], nil
+		}
+		return tls.Certificate{}, fmt.Errorf("multiple credentials on card; set yubikeyCertCN to one of: %s", certCNs(pairs))
+	}
+	var matches []tls.Certificate
+	for _, p := range pairs {
+		if p.Leaf != nil && p.Leaf.Subject.CommonName == wantCN {
+			matches = append(matches, p)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return tls.Certificate{}, fmt.Errorf("no credential with CN %q; available: %s", wantCN, certCNs(pairs))
+	default:
+		return tls.Certificate{}, fmt.Errorf("multiple credentials with CN %q on card; cannot disambiguate", wantCN)
+	}
+}
+
+// certCNs renders the Subject CommonNames of the paired certs for error messages.
+func certCNs(pairs []tls.Certificate) string {
+	names := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		if p.Leaf == nil {
+			names = append(names, "<no leaf>")
+			continue
+		}
+		names = append(names, fmt.Sprintf("%q", p.Leaf.Subject.CommonName))
+	}
+	return strings.Join(names, ", ")
 }
 
 func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error) {
@@ -155,32 +214,15 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error)
 		}
 	}()
 
-	kps, err := cryptoCtx.FindAllKeyPairs()
-	if err != nil {
-		return nil, fmt.Errorf("failed to find key pairs: %w", err)
-	}
-	if len(kps) == 0 {
-		return nil, fmt.Errorf("no key pairs found on YubiKey")
-	}
-	if appConfig.YubikeyPivIndex >= len(kps) {
-		return nil, fmt.Errorf("yubikeyPivIndex %d out of range (found %d key pairs)", appConfig.YubikeyPivIndex, len(kps))
-	}
-	signer := kps[appConfig.YubikeyPivIndex]
-
-	certs, err := cryptoCtx.FindAllPairedCertificates()
+	// crypto11 pairs each private key with its certificate by CKA_ID (the PIV slot),
+	// so every returned tls.Certificate already has the correct key+cert bound together.
+	pairs, err := cryptoCtx.FindAllPairedCertificates()
 	if err != nil {
 		return nil, fmt.Errorf("could not search for certificates: %w", err)
 	}
-	// Array bounds check: prevent panic if no certificates found
-	if len(certs) == 0 {
-		return nil, fmt.Errorf("no paired certificates found on YubiKey")
-	}
-	cert := certs[0]
-
-	tlsCert := tls.Certificate{
-		Certificate: cert.Certificate,
-		PrivateKey:  signer,
-		Leaf:        cert.Leaf,
+	tlsCert, err := selectCertificate(pairs, appConfig.YubikeyCertCN)
+	if err != nil {
+		return nil, err
 	}
 
 	tlsConfig := &tls.Config{

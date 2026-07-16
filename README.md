@@ -8,7 +8,7 @@ simple binary that will use a local cert/key pair on disk or on a yubikey to log
   a. macOS: `brew install opensc`
   b. linux: `apt install opensc` # or whatever your package manager is...
 1. Make a folder called `mkdir -p ~/.yubivault`
-2. Chown that to you only `chown -R 700 ~/.yubivault`
+2. Restrict it to you only `chmod 700 ~/.yubivault` (and `chmod 600` the key file)
 3. Make a config file:
 
 ```yaml
@@ -23,8 +23,9 @@ openscPath: "/opt/homebrew/Cellar/opensc/0.26.1/lib/pkcs11/opensc-pkcs11.so"
 # openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
 yubikeySerial: "12345678"
 yubikeyPivSerial: "1234567890123456"
-yubikeyPivLabel: "jhow-yubikey-12345678"
-yubikeyPivIndex: 0
+# optional: only needed when the card holds more than one credential.
+# Set it to the certificate Subject CN of the credential you want.
+# yubikeyCertCN: "network_admin_g2"
 ```
 
 4a. for local auth: put valid cert/key pair into that path

@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"os"
 	"strings"
@@ -135,6 +138,38 @@ certAuthMount: "cert"
 	}
 }
 
+func TestLoadConfig_RejectsMissingAuthFields(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/.yubivault"
+	os.Mkdir(configPath, 0755)
+	// vaultAddr present but certAuth fields missing
+	os.WriteFile(configPath+"/config.yml", []byte(`vaultAddr: "https://localhost:8200"`+"\n"), 0644)
+
+	_, err := LoadConfig(dir)
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected required-fields error, got %v", err)
+	}
+}
+
+func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
+	dir := t.TempDir()
+	dotDir := dir + "/.yubivault"
+	os.Mkdir(dotDir, 0700)
+	os.Chmod(dotDir, 0700) // match documented ~/.yubivault perms, defeat umask
+	keyPath := dotDir + "/client-cert.key"
+	os.WriteFile(keyPath, []byte("dummy"), 0644)
+	os.Chmod(keyPath, 0644) // defeat umask so the test actually exercises the rejection path
+
+	appConfig := &AppConfig{
+		VaultAddr:       "https://localhost:8200",
+		CertAuthPemFile: "client-cert.pem",
+		CertAuthKeyFile: "client-cert.key",
+	}
+	if _, err := CreateLocalVaultClient(appConfig, dir); err == nil || !strings.Contains(err.Error(), "group/other") {
+		t.Errorf("expected permissions error, got %v", err)
+	}
+}
+
 func TestReadPin_Mock(t *testing.T) {
 	input := bytes.NewBufferString("123456\n")
 	pin, err := ReadPin("1234567", input)
@@ -192,8 +227,8 @@ func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
 			expectErr: "could not read PIN code",
 		},
 		{
-			name:     "invalid OpenSC path",
-			setupEnv: func() { os.Setenv("TOKEN_PIN", "123456") },
+			name:       "invalid OpenSC path",
+			setupEnv:   func() { os.Setenv("TOKEN_PIN", "123456") },
 			cleanupEnv: func() { os.Unsetenv("TOKEN_PIN") },
 			appConfig: &AppConfig{
 				OpenScPath:       "/nonexistent/path.so",
@@ -220,6 +255,47 @@ func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
 
 			if !strings.Contains(err.Error(), tt.expectErr) {
 				t.Errorf("expected error containing %q, got %q", tt.expectErr, err)
+			}
+		})
+	}
+}
+
+func pairWithCN(cn string) tls.Certificate {
+	return tls.Certificate{Leaf: &x509.Certificate{Subject: pkix.Name{CommonName: cn}}}
+}
+
+func TestSelectCertificate(t *testing.T) {
+	tests := []struct {
+		name    string
+		pairs   []tls.Certificate
+		wantCN  string
+		wantErr string // substring; "" means expect success
+		gotCN   string // expected CN of the returned cert on success
+	}{
+		{name: "no pairs", pairs: nil, wantErr: "no paired credentials"},
+		{name: "single pair, no CN", pairs: []tls.Certificate{pairWithCN("admin")}, gotCN: "admin"},
+		{name: "single pair, matching CN", pairs: []tls.Certificate{pairWithCN("admin")}, wantCN: "admin", gotCN: "admin"},
+		{name: "single pair, mismatched CN", pairs: []tls.Certificate{pairWithCN("admin")}, wantCN: "nope", wantErr: "no credential with CN"},
+		{name: "multiple pairs, no CN", pairs: []tls.Certificate{pairWithCN("a"), pairWithCN("b")}, wantErr: "set yubikeyCertCN"},
+		{name: "multiple pairs, unique match", pairs: []tls.Certificate{pairWithCN("a"), pairWithCN("b")}, wantCN: "b", gotCN: "b"},
+		{name: "multiple pairs, duplicate CN", pairs: []tls.Certificate{pairWithCN("dup"), pairWithCN("dup")}, wantCN: "dup", wantErr: "cannot disambiguate"},
+		{name: "multiple pairs, CN matches none", pairs: []tls.Certificate{pairWithCN("a"), pairWithCN("b")}, wantCN: "c", wantErr: "no credential with CN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := selectCertificate(tt.pairs, tt.wantCN)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Leaf == nil || got.Leaf.Subject.CommonName != tt.gotCN {
+				t.Errorf("expected returned CN %q, got %+v", tt.gotCN, got.Leaf)
 			}
 		})
 	}
