@@ -188,7 +188,7 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error)
 
 	tokenPin := os.Getenv("TOKEN_PIN")
 	if tokenPin == "" {
-		tokenPin, err = ReadPin(appConfig.YubikeySerial, os.Stdin)
+		tokenPin, err = ReadPin(appConfig.YubikeySerial, os.Stdin, os.Stderr)
 		if err != nil {
 			return nil, fmt.Errorf("could not read PIN code: %w", err)
 		}
@@ -252,11 +252,13 @@ func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error)
 	return &YubikeyVaultClient{VaultClient: client, cryptoCtx: cryptoCtx}, nil
 }
 
-func ReadPin(yubikeySerial string, r io.Reader) (string, error) {
-	fmt.Print("PIN for " + yubikeySerial + ": ")
+// ReadPin prompts on w and reads the PIN from r. Callers pass os.Stderr for w:
+// stdout carries only the token, so `TOKEN=$(yubivault -yubi)` stays clean.
+func ReadPin(yubikeySerial string, r io.Reader, w io.Writer) (string, error) {
+	fmt.Fprint(w, "PIN for "+yubikeySerial+": ")
 	if r == os.Stdin {
 		bPin, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
+		fmt.Fprintln(w)
 		if err != nil {
 			return "", err
 		}
@@ -264,7 +266,7 @@ func ReadPin(yubikeySerial string, r io.Reader) (string, error) {
 	}
 	bPin := make([]byte, 64)
 	n, err := r.Read(bPin)
-	fmt.Println()
+	fmt.Fprintln(w)
 	if err != nil && err != io.EOF {
 		return "", err
 	}
