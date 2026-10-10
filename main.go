@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -152,20 +153,20 @@ func (c *AppConfig) requireForMode(local bool) error {
 }
 
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
-	tlsConfig := vault.TLSConfiguration{}
-	tlsConfig.ClientCertificate.FromFile = filepath.Join(homeDir, configDirName, appConfig.CertAuthPemFile)
-	// The key is read here rather than via FromFile so that vault.New never
-	// sees the key path and cannot put it in an error.
+	// Key first: its permission check must fail closed even if the cert is missing.
 	keyPEM, err := readPrivateKey(filepath.Join(homeDir, configDirName, appConfig.CertAuthKeyFile))
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig.ClientCertificateKey.FromBytes = keyPEM
-	client, err := vault.New(
-		vault.WithAddress(appConfig.VaultAddr),
-		vault.WithTLS(tlsConfig),
-		vault.WithRequestTimeout(30*time.Second),
-	)
+	certPEM, err := os.ReadFile(filepath.Join(homeDir, configDirName, appConfig.CertAuthPemFile))
+	if err != nil {
+		return nil, fmt.Errorf("could not read certificate file (certAuthPemFile): %w", err)
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("could not load client certificate and key: %w", err)
+	}
+	client, err := newVaultClient(appConfig.VaultAddr, cert)
 	if err != nil {
 		return nil, err
 	}
@@ -302,33 +303,74 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVa
 		return nil, err
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{tlsCert},
-		InsecureSkipVerify: false,
-		MinVersion:         tls.VersionTLS12,
-	}
-
-	client, err := vault.New(
-		vault.WithAddress(appConfig.VaultAddr),
-		vault.WithHTTPClient(newHTTPClient(tlsConfig)),
-	)
+	client, err := newVaultClient(appConfig.VaultAddr, tlsCert)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Vault client: %w", err)
+		return nil, err
 	}
 
 	// Success: return wrapped client with context ownership transferred
 	return &YubikeyVaultClient{VaultClient: client, cryptoCtx: cryptoCtx}, nil
 }
 
-// newHTTPClient returns the -yubi HTTP client. It starts from a clone of
-// http.DefaultTransport rather than a bare http.Transport, which has no Proxy
-// func (HTTPS_PROXY/NO_PROXY ignored), no dial/handshake/idle timeouts and,
-// with a custom TLSClientConfig, no HTTP/2. -local gets all of these from
-// vault-client-go's default client.
+// Timeouts for talking to Vault. An unreachable address must fail within
+// seconds rather than after a minute of silence: each attempt gets dialTimeout
+// to connect, and a failed attempt is retried once (see newVaultClient).
+const (
+	dialTimeout    = 5 * time.Second
+	requestTimeout = 30 * time.Second
+)
+
+// newVaultClient returns a Vault client that presents cert for TLS client
+// auth. -local and -yubi both use it, so they share transport, timeouts and
+// retries.
+func newVaultClient(addr string, cert tls.Certificate) (*vault.Client, error) {
+	client, err := vault.New(
+		vault.WithAddress(addr),
+		vault.WithHTTPClient(newHTTPClient(clientTLSConfig(cert))),
+		vault.WithRequestTimeout(requestTimeout),
+		// One retry for a transient failure; the library default of two,
+		// stacked on connect timeouts, is what made an unreachable Vault hang.
+		vault.WithRetryConfiguration(vault.RetryConfiguration{
+			RetryMax:     1,
+			RetryWaitMin: 1 * time.Second,
+			RetryWaitMax: 1500 * time.Millisecond,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Vault client: %w", err)
+	}
+	return client, nil
+}
+
+// clientTLSConfig always presents cert, ignoring the CA names the server
+// advertises, as vault-client-go's own WithTLS does. With the plain
+// Certificates field, Go sends no certificate when the advertised names do not
+// include its issuer, and cert auth then fails.
+func clientTLSConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return &cert, nil
+		},
+		MinVersion: tls.VersionTLS12,
+	}
+}
+
+// newHTTPClient starts from a clone of http.DefaultTransport rather than a
+// bare http.Transport, which has no Proxy func (HTTPS_PROXY/NO_PROXY ignored),
+// no dial/handshake/idle timeouts and, with a custom TLSClientConfig, no
+// HTTP/2. The connect timeout is shortened to dialTimeout, and redirects are
+// left to vault-client-go, as its own default client does.
 func newHTTPClient(tlsConfig *tls.Config) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext
 	transport.TLSClientConfig = tlsConfig
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   requestTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 // ReadPin prompts on w and reads the PIN from r. Callers pass os.Stderr for w:
