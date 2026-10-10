@@ -1,14 +1,11 @@
 version: 2
-# Every two weeks: Dependabot has no fortnightly interval, so both ecosystems
-# run on the 1st and 15th of the month (06:00 UTC).
 updates:
   # GitHub Actions in .github/workflows, including the SHA pins (Dependabot
   # updates the SHA and the version comment together).
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: cron
-      cronjob: "0 6 1,15 * *"
+      interval: monthly
     labels: [dependencies]
     groups:
       actions:
@@ -18,8 +15,7 @@ updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: cron
-      cronjob: "0 6 1,15 * *"
+      interval: monthly
     labels: [dependencies]
     groups:
       go-modules:
