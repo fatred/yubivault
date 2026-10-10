@@ -240,20 +240,9 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVa
 		MinVersion:         tls.VersionTLS12,
 	}
 
-	// Start from a clone of http.DefaultTransport rather than a bare
-	// http.Transport, which has no Proxy func (HTTPS_PROXY/NO_PROXY ignored),
-	// no dial/handshake/idle timeouts and, with a custom TLSClientConfig, no
-	// HTTP/2. -local gets all of these from vault-client-go's default client.
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = tlsConfig
-	customClient := &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-	}
-
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
-		vault.WithHTTPClient(customClient),
+		vault.WithHTTPClient(newHTTPClient(tlsConfig)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Vault client: %w", err)
@@ -261,6 +250,17 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVa
 
 	// Success: return wrapped client with context ownership transferred
 	return &YubikeyVaultClient{VaultClient: client, cryptoCtx: cryptoCtx}, nil
+}
+
+// newHTTPClient returns the -yubi HTTP client. It starts from a clone of
+// http.DefaultTransport rather than a bare http.Transport, which has no Proxy
+// func (HTTPS_PROXY/NO_PROXY ignored), no dial/handshake/idle timeouts and,
+// with a custom TLSClientConfig, no HTTP/2. -local gets all of these from
+// vault-client-go's default client.
+func newHTTPClient(tlsConfig *tls.Config) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
+	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
 }
 
 // ReadPin prompts on w and reads the PIN from r. Callers pass os.Stderr for w:
