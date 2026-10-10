@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -177,13 +178,40 @@ func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 
 func TestReadPin_Mock(t *testing.T) {
 	input := bytes.NewBufferString("123456\n")
-	pin, err := ReadPin("1234567", input)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	var prompt bytes.Buffer
+	pin, stdout := captureStdout(t, func() (string, error) { return ReadPin("1234567", input, &prompt) })
 	if pin != "123456" {
 		t.Errorf("expected pin '123456\\n', got %q", pin)
 	}
+	// stdout carries only the token (`TOKEN=$(yubivault -yubi)`); the prompt
+	// must go to the supplied writer (stderr in main).
+	if stdout != "" {
+		t.Errorf("ReadPin wrote to stdout: %q", stdout)
+	}
+	if !strings.Contains(prompt.String(), "1234567") {
+		t.Errorf("prompt not written to writer, got %q", prompt.String())
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected and returns fn's result and
+// whatever it printed to stdout.
+func captureStdout(t *testing.T, fn func() (string, error)) (string, string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	got, fnErr := fn()
+	os.Stdout = orig
+	w.Close()
+	out, _ := io.ReadAll(r)
+	r.Close()
+	if fnErr != nil {
+		t.Fatalf("unexpected error: %v", fnErr)
+	}
+	return got, string(out)
 }
 
 func TestLocalVaultClient_Interface(t *testing.T) {
