@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -93,16 +94,26 @@ func (c *RealVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[
 	return c.Client.Auth.TokenLookUpSelf(ctx)
 }
 
+// configDirName holds config.yml and, for -local, the client cert and key.
+const configDirName = ".yubivault"
+
 func LoadConfig(homeDir string) (*AppConfig, error) {
-	appConfig := &AppConfig{}
-	file, err := os.Open(homeDir + "/.yubivault/config.yml")
+	path := filepath.Join(homeDir, configDirName, "config.yml")
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(&appConfig); err != nil {
-		return nil, err
+	// Unknown keys are errors: a typo or a retired setting (yubikeyPivIndex,
+	// yubikeyPivLabel) would otherwise be silently ignored.
+	decoder.KnownFields(true)
+	appConfig := &AppConfig{}
+	if err := decoder.Decode(appConfig); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s is empty", path)
+		}
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	// Reject incomplete config up front rather than producing confusing
 	// downstream errors. Scheme is not enforced: cert-login needs a TLS
@@ -117,10 +128,26 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	return appConfig, nil
 }
 
+// requireForMode checks the fields that only one auth mode needs, so a missing
+// value fails with the field name rather than a confusing downstream error
+// (an empty certAuthKeyFile used to resolve to the ~/.yubivault directory).
+func (c *AppConfig) requireForMode(local bool) error {
+	if local {
+		if c.CertAuthPemFile == "" || c.CertAuthKeyFile == "" {
+			return fmt.Errorf("certAuthPemFile and certAuthKeyFile are required for -local")
+		}
+		return nil
+	}
+	if c.OpenScPath == "" || c.YubikeyPivSerial == "" {
+		return fmt.Errorf("openscPath and yubikeyPivSerial are required for -yubi")
+	}
+	return nil
+}
+
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
-	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
-	keyPath := homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
+	tlsConfig.ClientCertificate.FromFile = filepath.Join(homeDir, configDirName, appConfig.CertAuthPemFile)
+	keyPath := filepath.Join(homeDir, configDirName, appConfig.CertAuthKeyFile)
 	tlsConfig.ClientCertificateKey.FromFile = keyPath
 	// Refuse to use a private key that group/other can read (fail-secure).
 	// The error names the config field rather than echoing the path: the value
@@ -334,6 +361,10 @@ func run(args []string) error {
 		return nil
 	}
 
+	if *localFlag == *yubikeyFlag {
+		return errors.New("Pick -local or -yubi")
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -342,8 +373,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *localFlag == *yubikeyFlag {
-		return errors.New("Pick -local or -yubi")
+	if err := appConfig.requireForMode(*localFlag); err != nil {
+		return err
 	}
 
 	// Read the PIN before catching signals: the prompt blocks in
