@@ -326,10 +326,7 @@ const (
 func newVaultClient(addr string, cert tls.Certificate) (*vault.Client, error) {
 	client, err := vault.New(
 		vault.WithAddress(addr),
-		vault.WithHTTPClient(newHTTPClient(&tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		})),
+		vault.WithHTTPClient(newHTTPClient(clientTLSConfig(cert))),
 		vault.WithRequestTimeout(requestTimeout),
 		// One retry for a transient failure; the library default of two,
 		// stacked on connect timeouts, is what made an unreachable Vault hang.
@@ -343,6 +340,19 @@ func newVaultClient(addr string, cert tls.Certificate) (*vault.Client, error) {
 		return nil, fmt.Errorf("failed to create Vault client: %w", err)
 	}
 	return client, nil
+}
+
+// clientTLSConfig always presents cert, ignoring the CA names the server
+// advertises, as vault-client-go's own WithTLS does. With the plain
+// Certificates field, Go sends no certificate when the advertised names do not
+// include its issuer, and cert auth then fails.
+func clientTLSConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return &cert, nil
+		},
+		MinVersion: tls.VersionTLS12,
+	}
 }
 
 // newHTTPClient starts from a clone of http.DefaultTransport rather than a

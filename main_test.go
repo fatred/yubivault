@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -10,12 +13,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
@@ -499,5 +505,80 @@ func TestNewHTTPClient_UsesProxyFromEnvironment(t *testing.T) {
 		}
 	default:
 		t.Error("request did not go through HTTPS_PROXY")
+	}
+}
+
+// selfSignedCert returns a throwaway self-signed certificate (key included).
+func selfSignedCert(t *testing.T, cn string) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+}
+
+// A server that advertises CA names not including our issuer must still get
+// our certificate: Vault's cert auth checks the CA itself, after the handshake.
+func TestClientTLSConfig_PresentsCertDespiteAdvertisedCAs(t *testing.T) {
+	client := selfSignedCert(t, "alice")
+	unrelated := selfSignedCert(t, "Some Other CA")
+	advertised := x509.NewCertPool()
+	advertised.AddCert(unrelated.Leaf)
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, len(r.TLS.PeerCertificates))
+	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequestClientCert, ClientCAs: advertised}
+	srv.StartTLS()
+	defer srv.Close()
+
+	cfg := clientTLSConfig(client)
+	cfg.RootCAs = x509.NewCertPool()
+	cfg.RootCAs.AddCert(srv.Certificate())
+	resp, err := newHTTPClient(cfg).Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "1" {
+		t.Errorf("server received %s client certificates, want 1", body)
+	}
+}
+
+// An unreachable or failing Vault must cost two attempts, not the library
+// default of three: that stacking is what made v1.4.0 hang for 60s.
+func TestNewVaultClient_RetriesOnce(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, `{"errors":["unavailable"]}`, http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	client, err := newVaultClient(srv.URL, selfSignedCert(t, "alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Auth.CertLogin(context.Background(), schema.CertLoginRequest{Name: "admin"}, vault.WithMountPath("cert")); err == nil {
+		t.Fatal("expected login error")
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("Vault saw %d attempts, want 2 (one retry)", got)
 	}
 }
