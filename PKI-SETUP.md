@@ -68,7 +68,7 @@ Send `alice.csr` to the issuer. It contains no secrets.
 
 ## 3. Issuer: check and sign the CSR
 
-The user chose the CN and OU in the CSR, and the OU decides what the certificate can log in to. **Check the subject before signing.**
+The user chose the CN and OU in the CSR, and the OU decides what the certificate can log in to. **The OU in a CSR is a claim, not proof of membership.** Before signing, confirm the requester's identity and team membership through a source you trust (not the CSR itself), and check the subject contains exactly the expected CN and a single OU.
 
 Copy the CSR into the depot as `<name>.csr`, and make it read-only. certstrap refuses depot files that are writable (`permissions too lax ... required no more than -r--r--r--`), so `chmod 600` is not enough:
 
@@ -123,7 +123,7 @@ vault write auth/cert/certs/admin \
 ```
 
 - `certificate` is the CA certificate. Any certificate it signed is accepted by this role, subject to the constraints below.
-- `allowed_organizational_units` admits any certificate with `OU=vault-admins`, whatever its CN. Adding someone to the team means issuing them a certificate with that OU; nothing changes in Vault. Without a constraint, every certificate the CA has ever signed gets admin access.
+- `allowed_organizational_units` admits any certificate with `OU=vault-admins`, whatever its CN. Vault accepts a certificate if **at least one** of its OUs matches, so a certificate with `OU=finance` and `OU=vault-admins` gets in, while one with no OU, or no matching OU, is refused. Adding someone to the team means issuing them a certificate with that OU; nothing changes in Vault. Without a constraint, every certificate the CA has ever signed gets admin access.
 - The CN still identifies the person: it appears as `common_name` in the token's metadata (`vault token lookup`) and in the audit log.
 - To admit specific people instead of a team, use `allowed_common_names=alice,bob`.
 - For another team with different access, create another policy and another role, with that team's OU.
