@@ -15,9 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
@@ -459,27 +457,6 @@ func TestLoginAndClose_ClosesOnFailure(t *testing.T) {
 				t.Error("auth client not closed after failed login")
 			}
 		})
-	}
-}
-
-func TestCancelOnSignal(t *testing.T) {
-	ctx, stop := cancelOnSignal()
-	defer stop()
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Signal(os.Interrupt); err != nil {
-		t.Skipf("cannot signal self on this platform: %v", err)
-	}
-	select {
-	case <-ctx.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("context not cancelled by SIGINT")
-	}
-	var sigErr signalError
-	if !errors.As(context.Cause(ctx), &sigErr) || sigErr.sig != syscall.SIGINT {
-		t.Errorf("cause = %v, want signalError{SIGINT}", context.Cause(ctx))
 	}
 }
 

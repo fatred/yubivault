@@ -112,7 +112,7 @@ export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
 
 - Set `TOKEN_PIN` to skip the PIN prompt in non-interactive use.
 - `HTTPS_PROXY` and `NO_PROXY` are honoured in both modes.
-- The exit status is non-zero on any failure. On Ctrl-C or SIGTERM it is 130 or 143, after the YubiKey session has been closed.
+- The exit status is non-zero on any failure. On Ctrl-C or SIGTERM during login, yubivault closes the YubiKey session first and then exits 1 (`interrupt signal received` / `terminated signal received`).
 
 ## Credits
 
