@@ -58,6 +58,17 @@ ykman piv keys generate --algorithm ECCP256 9a alice.pub
 
 `ECCP384` works too.
 
+**Optional: require a touch.** By default, the PIN alone unlocks the key. To also require a physical touch of the YubiKey, add `--touch-policy` when generating the key:
+
+```shell
+ykman piv keys generate --algorithm ECCP256 --touch-policy CACHED 9a alice.pub
+```
+
+- `ALWAYS` asks for a touch on every use of the key. `CACHED` remembers a touch for 15 seconds.
+- The touch policy is fixed when the key is generated. Changing it later means generating a new key and going through steps 2 to 4 again.
+- Creating the CSR and each yubivault login use the key. With a touch policy set, the YubiKey blinks when one of them needs a touch: always with `ALWAYS`, and with `CACHED` unless the key was touched in the last 15 seconds.
+- yubivault waits up to 10 seconds for the TLS handshake, so touch the key within 10 seconds. If you miss it, yubivault retries once and the key blinks again.
+
 Create the CSR. Put your name in `CN` and your team in `OU`. The YubiKey signs the CSR with the slot 9a key, so you are asked for the PIN:
 
 ```shell
