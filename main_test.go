@@ -247,54 +247,33 @@ func TestYubikeyVaultClient_CloseNil(t *testing.T) {
 	}
 }
 
-func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
-	tests := []struct {
-		name       string
-		setupEnv   func()
-		cleanupEnv func()
-		appConfig  *AppConfig
-		expectErr  string
-	}{
-		{
-			name:       "empty PIN from environment",
-			setupEnv:   func() { os.Unsetenv("TOKEN_PIN") },
-			cleanupEnv: func() {},
-			appConfig: &AppConfig{
-				YubikeySerial: "12345",
-			},
-			expectErr: "could not read PIN code",
-		},
-		{
-			name:       "invalid OpenSC path",
-			setupEnv:   func() { os.Setenv("TOKEN_PIN", "123456") },
-			cleanupEnv: func() { os.Unsetenv("TOKEN_PIN") },
-			appConfig: &AppConfig{
-				OpenScPath:       "/nonexistent/path.so",
-				YubikeyPivSerial: "invalid",
-				YubikeySerial:    "12345",
-			},
-			expectErr: "could not configure crypto11",
-		},
+func TestResolvePin(t *testing.T) {
+	t.Run("TOKEN_PIN wins over prompt", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", "654321")
+		if pin, err := resolvePin(&AppConfig{YubikeySerial: "12345"}); err != nil || pin != "654321" {
+			t.Errorf("got %q, %v; want TOKEN_PIN value", pin, err)
+		}
+	})
+	t.Run("no TOKEN_PIN and stdin not a terminal", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", "")
+		if _, err := resolvePin(&AppConfig{YubikeySerial: "12345"}); err == nil || !strings.Contains(err.Error(), "could not read PIN code") {
+			t.Errorf("expected PIN read error, got %v", err)
+		}
+	})
+}
+
+func TestCreateYubikeyVaultClient_InvalidModule(t *testing.T) {
+	client, err := CreateYubikeyVaultClient(&AppConfig{
+		OpenScPath:       "/nonexistent/path.so",
+		YubikeyPivSerial: "invalid",
+		YubikeySerial:    "12345",
+	}, "123456")
+	if err == nil {
+		client.Close()
+		t.Fatal("expected error, got nil")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupEnv != nil {
-				tt.setupEnv()
-				defer tt.cleanupEnv()
-			}
-
-			client, err := CreateYubikeyVaultClient(tt.appConfig)
-
-			if err == nil {
-				defer client.Close()
-				t.Fatal("expected error, got nil")
-			}
-
-			if !strings.Contains(err.Error(), tt.expectErr) {
-				t.Errorf("expected error containing %q, got %q", tt.expectErr, err)
-			}
-		})
+	if !strings.Contains(err.Error(), "could not configure crypto11") {
+		t.Errorf("expected crypto11 configure error, got %q", err)
 	}
 }
 

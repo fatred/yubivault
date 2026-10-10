@@ -184,21 +184,25 @@ func certCNs(pairs []tls.Certificate) string {
 	return strings.Join(names, ", ")
 }
 
-func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error) {
+// resolvePin returns $TOKEN_PIN, or prompts for the PIN on the terminal.
+func resolvePin(appConfig *AppConfig) (string, error) {
+	if tokenPin := os.Getenv("TOKEN_PIN"); tokenPin != "" {
+		return tokenPin, nil
+	}
+	tokenPin, err := ReadPin(appConfig.YubikeySerial, os.Stdin, os.Stderr)
+	if err != nil {
+		return "", fmt.Errorf("could not read PIN code: %w", err)
+	}
+	tokenPin = strings.TrimSpace(tokenPin)
+	if tokenPin == "" {
+		return "", fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
+	}
+	return tokenPin, nil
+}
+
+func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVaultClient, error) {
 	var err error
 	var cryptoCtx *crypto11.Context
-
-	tokenPin := os.Getenv("TOKEN_PIN")
-	if tokenPin == "" {
-		tokenPin, err = ReadPin(appConfig.YubikeySerial, os.Stdin, os.Stderr)
-		if err != nil {
-			return nil, fmt.Errorf("could not read PIN code: %w", err)
-		}
-		tokenPin = strings.TrimSpace(tokenPin)
-		if tokenPin == "" {
-			return nil, fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
-		}
-	}
 
 	cryptoCtx, err = crypto11.Configure(&crypto11.Config{
 		Path:        appConfig.OpenScPath,
@@ -341,25 +345,41 @@ func run(args []string) error {
 		return errors.New("Pick -local or -yubi")
 	}
 
+	// Read the PIN before catching signals: the prompt blocks in
+	// term.ReadPassword and must stay killable by Ctrl-C.
+	var tokenPin string
+	if *yubikeyFlag {
+		if tokenPin, err = resolvePin(appConfig); err != nil {
+			return err
+		}
+	}
+
+	// From here on a PKCS#11 context may be open, so SIGINT/SIGTERM cancel ctx
+	// instead of killing the process; every path below closes the client.
+	ctx, stop := cancelOnSignal()
+	defer stop()
+
 	var authClient VaultAuthClient
 	if *localFlag {
 		authClient, err = CreateLocalVaultClient(appConfig, homeDir)
 	} else {
-		authClient, err = CreateYubikeyVaultClient(appConfig)
+		// Not ctx-aware, but local and short; its own defer closes the
+		// context on error, and a signal received meanwhile is acted on below.
+		authClient, err = CreateYubikeyVaultClient(appConfig, tokenPin)
 	}
-	if err != nil {
-		return err
-	}
-
-	// Catch SIGINT/SIGTERM only once a client exists: the PIN prompt above
-	// blocks in term.ReadPassword and must stay killable by Ctrl-C.
-	ctx, stop := cancelOnSignal()
-	defer stop()
-	token, err := loginAndClose(ctx, authClient, appConfig)
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
+		return err
+	}
+	// A pre-cancelled ctx fails the login immediately; the client is still closed.
+	token, err := loginAndClose(ctx, authClient, appConfig)
+	// A signal that raced a successful login still wins: no token, 128+signo.
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	if err != nil {
 		return err
 	}
 	fmt.Println(token)
