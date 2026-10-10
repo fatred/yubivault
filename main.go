@@ -426,8 +426,9 @@ func run(args []string) error {
 
 	// From here on a PKCS#11 context may be open, so SIGINT/SIGTERM cancel ctx
 	// instead of killing the process; every path below closes the client.
-	// Once ctx is cancelled, stop restores the default action, so a second
-	// signal terminates immediately.
+	// Once ctx is cancelled, AfterFunc runs stop (asynchronously), restoring
+	// the default action: a later signal kills the process if cleanup stalls.
+	// A second signal arriving within microseconds of the first is absorbed.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	context.AfterFunc(ctx, stop)
