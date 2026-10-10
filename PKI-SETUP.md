@@ -116,7 +116,7 @@ vault write auth/cert/certs/admin \
    - **Name**: `admin`
    - **Certificate**: choose **Enter as text** and paste the contents of `out/Vault_Users_CA.crt`
    - **Display name**: `admin`
-   - Under **Tokens**, set **Generated Token's Policies** to `yubivault-admin`, plus the TTLs if you want them.
+   - Under **Tokens**, set **Generated Token's Policies** to `yubivault-admin`. Turn on **Generated Token's Initial TTL** and set it to 1 hour, then turn on **Generated Token's Maximum TTL** and set it to 8 hours. Without these, tokens get the mount's default lifetime, which is usually much longer than you want for admin access.
    - Under **Constraints**, set **Allowed common names** to `alice`.
    - Click **Save**.
 
