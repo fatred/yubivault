@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -93,16 +95,32 @@ func (c *RealVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[
 	return c.Client.Auth.TokenLookUpSelf(ctx)
 }
 
+// configDirName holds config.yml and, for -local, the client cert and key.
+const configDirName = ".yubivault"
+
 func LoadConfig(homeDir string) (*AppConfig, error) {
-	appConfig := &AppConfig{}
-	file, err := os.Open(homeDir + "/.yubivault/config.yml")
+	path := filepath.Join(homeDir, configDirName, "config.yml")
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(&appConfig); err != nil {
-		return nil, err
+	// Unknown keys are errors: a typo or a retired setting (yubikeyPivIndex,
+	// yubikeyPivLabel) would otherwise be silently ignored.
+	decoder.KnownFields(true)
+	appConfig := &AppConfig{}
+	if err := decoder.Decode(appConfig); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s is empty", path)
+		}
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// KnownFields only applies to documents that are decoded, so a second
+	// `---` document would escape the unknown-key check: allow exactly one.
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s must contain a single YAML document", path)
 	}
 	// Reject incomplete config up front rather than producing confusing
 	// downstream errors. Scheme is not enforced: cert-login needs a TLS
@@ -117,19 +135,32 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	return appConfig, nil
 }
 
+// requireForMode checks the fields that only one auth mode needs, so a missing
+// value fails with the field name rather than a confusing downstream error
+// (an empty certAuthKeyFile used to resolve to the ~/.yubivault directory).
+func (c *AppConfig) requireForMode(local bool) error {
+	if local {
+		if c.CertAuthPemFile == "" || c.CertAuthKeyFile == "" {
+			return fmt.Errorf("certAuthPemFile and certAuthKeyFile are required for -local")
+		}
+		return nil
+	}
+	if c.OpenScPath == "" || c.YubikeyPivSerial == "" {
+		return fmt.Errorf("openscPath and yubikeyPivSerial are required for -yubi")
+	}
+	return nil
+}
+
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
-	tlsConfig.ClientCertificate.FromFile = homeDir + "/.yubivault/" + appConfig.CertAuthPemFile
-	keyPath := homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
-	tlsConfig.ClientCertificateKey.FromFile = keyPath
-	// Refuse to use a private key that group/other can read (fail-secure).
-	// The error names the config field rather than echoing the path: the value
-	// comes from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
-	if info, err := os.Stat(keyPath); err != nil {
-		return nil, fmt.Errorf("could not stat key file: %w", err)
-	} else if info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("private key file (certAuthKeyFile in ~/.yubivault/config.yml) is accessible by group/other (mode %#o); run chmod 600 on it", info.Mode().Perm())
+	tlsConfig.ClientCertificate.FromFile = filepath.Join(homeDir, configDirName, appConfig.CertAuthPemFile)
+	// The key is read here rather than via FromFile so that vault.New never
+	// sees the key path and cannot put it in an error.
+	keyPEM, err := readPrivateKey(filepath.Join(homeDir, configDirName, appConfig.CertAuthKeyFile))
+	if err != nil {
+		return nil, err
 	}
+	tlsConfig.ClientCertificateKey.FromBytes = keyPEM
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
 		vault.WithTLS(tlsConfig),
@@ -139,6 +170,43 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 		return nil, err
 	}
 	return &LocalVaultClient{VaultClient: client}, nil
+}
+
+// keyFileField names the key in errors. Errors never echo the path: it comes
+// from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
+const keyFileField = "private key file (certAuthKeyFile in ~/.yubivault/config.yml)"
+
+// readPrivateKey returns the client key, refusing one that group/other can
+// read (fail-secure). The mode is checked on the opened file, so the file that
+// is checked is the file that is read.
+func readPrivateKey(keyPath string) ([]byte, error) {
+	f, err := os.Open(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not open %s: %w", keyFileField, pathErrCause(err))
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("could not stat %s: %w", keyFileField, pathErrCause(err))
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return nil, fmt.Errorf("%s is accessible by group/other (mode %#o); run chmod 600 on it", keyFileField, perm)
+	}
+	keyPEM, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("could not read %s: %w", keyFileField, pathErrCause(err))
+	}
+	return keyPEM, nil
+}
+
+// pathErrCause drops the path from an *fs.PathError and keeps its cause
+// (e.g. "no such file or directory"), so errors.Is still matches.
+func pathErrCause(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }
 
 // selectCertificate picks one paired credential from the card. With no wantCN and exactly
@@ -334,6 +402,10 @@ func run(args []string) error {
 		return nil
 	}
 
+	if *localFlag == *yubikeyFlag {
+		return errors.New("Pick -local or -yubi")
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -342,8 +414,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *localFlag == *yubikeyFlag {
-		return errors.New("Pick -local or -yubi")
+	if err := appConfig.requireForMode(*localFlag); err != nil {
+		return err
 	}
 
 	// Read the PIN before catching signals: the prompt blocks in

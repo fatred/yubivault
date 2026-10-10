@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -157,6 +158,80 @@ func TestLoadConfig_RejectsMissingAuthFields(t *testing.T) {
 	}
 }
 
+// writeConfig writes content to <tmp>/.yubivault/config.yml and returns <tmp>.
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(dir+"/.yubivault", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/.yubivault/config.yml", []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestLoadConfig_Rejects(t *testing.T) {
+	const base = "vaultAddr: https://localhost:8200\ncertAuthName: web\ncertAuthMount: cert\n"
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{"retired key", base + "yubikeyPivIndex: 1\n", "field yubikeyPivIndex not found"},
+		{"misspelled key", base + "certAuthKeyfile: client-cert.key\n", "field certAuthKeyfile not found"},
+		{"empty file", "", "is empty"},
+		{"unknown key in second document", base + "---\nunknownLaterDocument: true\n", "single YAML document"},
+		{"empty second document", base + "---\n", "single YAML document"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := LoadConfig(writeConfig(t, tt.content))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestRequireForMode(t *testing.T) {
+	full := AppConfig{
+		CertAuthPemFile: "client-cert.pem", CertAuthKeyFile: "client-cert.key",
+		OpenScPath: "/usr/lib/opensc-pkcs11.so", YubikeyPivSerial: "1234567890123456",
+	}
+	tests := []struct {
+		name    string
+		local   bool
+		clear   func(*AppConfig)
+		wantErr string
+	}{
+		{"local complete", true, func(*AppConfig) {}, ""},
+		{"local without key file", true, func(c *AppConfig) { c.CertAuthKeyFile = "" }, "required for -local"},
+		{"local without pem file", true, func(c *AppConfig) { c.CertAuthPemFile = "" }, "required for -local"},
+		{"local ignores yubikey fields", true, func(c *AppConfig) { c.OpenScPath, c.YubikeyPivSerial = "", "" }, ""},
+		{"yubi complete", false, func(*AppConfig) {}, ""},
+		{"yubi without opensc path", false, func(c *AppConfig) { c.OpenScPath = "" }, "required for -yubi"},
+		{"yubi without piv serial", false, func(c *AppConfig) { c.YubikeyPivSerial = "" }, "required for -yubi"},
+		{"yubi ignores local files", false, func(c *AppConfig) { c.CertAuthPemFile, c.CertAuthKeyFile = "", "" }, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := full
+			tt.clear(&cfg)
+			err := cfg.requireForMode(tt.local)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 	dir := t.TempDir()
 	dotDir := dir + "/.yubivault"
@@ -178,6 +253,54 @@ func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 	// The configured key path must not leak into the error (it ends up in logs).
 	if strings.Contains(err.Error(), keyPath) || strings.Contains(err.Error(), appConfig.CertAuthKeyFile) {
 		t.Errorf("error leaks key file path: %v", err)
+	}
+}
+
+func TestCreateLocalVaultClient_KeyErrorsDoNotLeakPath(t *testing.T) {
+	const keyName = "private-secret-name.key"
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, keyPath string)
+		wantIs error
+	}{
+		{"missing", func(*testing.T, string) {}, fs.ErrNotExist},
+		{"unreadable (mode 000)", func(t *testing.T, keyPath string) {
+			if os.Geteuid() == 0 {
+				t.Skip("root can read mode 000 files")
+			}
+			if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(keyPath, 0); err != nil {
+				t.Fatal(err)
+			}
+		}, fs.ErrPermission},
+		{"directory", func(t *testing.T, keyPath string) {
+			if err := os.Mkdir(keyPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeConfig(t, "")
+			keyPath := dir + "/.yubivault/" + keyName
+			tt.setup(t, keyPath)
+			_, err := CreateLocalVaultClient(&AppConfig{
+				VaultAddr:       "https://localhost:8200",
+				CertAuthPemFile: "client-cert.pem",
+				CertAuthKeyFile: keyName,
+			}, dir)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if tt.wantIs != nil && !errors.Is(err, tt.wantIs) {
+				t.Errorf("errors.Is(%v, %v) = false", err, tt.wantIs)
+			}
+			if strings.Contains(err.Error(), keyName) {
+				t.Errorf("error leaks key file path: %v", err)
+			}
+		})
 	}
 }
 

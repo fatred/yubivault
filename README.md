@@ -13,20 +13,26 @@ simple binary that will use a local cert/key pair on disk or on a yubikey to log
 
 ```yaml
 ---
+# always required
 vaultAddr: https://vault.problemofnetwork.com:8200
 certAuthName: network_admin_g2
 certAuthMount: network_admin
+# required for -local (file names inside ~/.yubivault)
 certAuthPemFile: client-cert.pem
 certAuthKeyFile: client-cert.key
+# required for -yubi
 openscPath: "/opt/homebrew/Cellar/opensc/0.27.1/lib/pkcs11/opensc-pkcs11.so"
 # debian
 # openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
-yubikeySerial: "12345678"
 yubikeyPivSerial: "1234567890123456"
+# optional: only used to label the PIN prompt
+yubikeySerial: "12345678"
 # optional: only needed when the card holds more than one credential.
 # Set it to the certificate Subject CN of the credential you want.
 # yubikeyCertCN: "network_admin_g2"
 ```
+
+Unknown keys are rejected, so a typo or a retired setting (`yubikeyPivIndex`, `yubikeyPivLabel`) fails with `field … not found` instead of being silently ignored.
 
 4a. for local auth: put valid cert/key pair into that path
 
