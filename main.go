@@ -121,10 +121,12 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 	keyPath := homeDir + "/.yubivault/" + appConfig.CertAuthKeyFile
 	tlsConfig.ClientCertificateKey.FromFile = keyPath
 	// Refuse to use a private key that group/other can read (fail-secure).
+	// The error names the config field rather than echoing the path: the value
+	// comes from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
 	if info, err := os.Stat(keyPath); err != nil {
 		return nil, fmt.Errorf("could not stat key file: %w", err)
 	} else if info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("private key %s is accessible by group/other (mode %#o); run: chmod 600 %s", keyPath, info.Mode().Perm(), keyPath)
+		return nil, fmt.Errorf("private key file (certAuthKeyFile in ~/.yubivault/config.yml) is accessible by group/other (mode %#o); run chmod 600 on it", info.Mode().Perm())
 	}
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),

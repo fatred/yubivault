@@ -165,8 +165,13 @@ func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 		CertAuthPemFile: "client-cert.pem",
 		CertAuthKeyFile: "client-cert.key",
 	}
-	if _, err := CreateLocalVaultClient(appConfig, dir); err == nil || !strings.Contains(err.Error(), "group/other") {
-		t.Errorf("expected permissions error, got %v", err)
+	_, err := CreateLocalVaultClient(appConfig, dir)
+	if err == nil || !strings.Contains(err.Error(), "group/other") {
+		t.Fatalf("expected permissions error, got %v", err)
+	}
+	// The configured key path must not leak into the error (it ends up in logs).
+	if strings.Contains(err.Error(), keyPath) || strings.Contains(err.Error(), appConfig.CertAuthKeyFile) {
+		t.Errorf("error leaks key file path: %v", err)
 	}
 }
 
