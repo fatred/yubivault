@@ -19,6 +19,9 @@ jobs:
         # cross-compiled from Linux.
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # First-party actions stay on major tags here, unlike release.yml: this
+    # workflow has a read-only token and ships nothing, and nothing (no
+    # Dependabot) would keep SHA pins up to date.
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
