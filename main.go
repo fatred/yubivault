@@ -154,22 +154,13 @@ func (c *AppConfig) requireForMode(local bool) error {
 func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultClient, error) {
 	tlsConfig := vault.TLSConfiguration{}
 	tlsConfig.ClientCertificate.FromFile = filepath.Join(homeDir, configDirName, appConfig.CertAuthPemFile)
-	keyPath := filepath.Join(homeDir, configDirName, appConfig.CertAuthKeyFile)
-	tlsConfig.ClientCertificateKey.FromFile = keyPath
-	// Refuse to use a private key that group/other can read (fail-secure).
-	// The error names the config field rather than echoing the path: the value
-	// comes from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
-	if info, err := os.Stat(keyPath); err != nil {
-		// Keep only the cause (e.g. "no such file or directory"): the
-		// *PathError text would repeat the configured key path.
-		var pathErr *fs.PathError
-		if errors.As(err, &pathErr) {
-			err = pathErr.Err
-		}
-		return nil, fmt.Errorf("could not stat private key file (certAuthKeyFile in ~/.yubivault/config.yml): %w", err)
-	} else if info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("private key file (certAuthKeyFile in ~/.yubivault/config.yml) is accessible by group/other (mode %#o); run chmod 600 on it", info.Mode().Perm())
+	// The key is read here rather than via FromFile so that vault.New never
+	// sees the key path and cannot put it in an error.
+	keyPEM, err := readPrivateKey(filepath.Join(homeDir, configDirName, appConfig.CertAuthKeyFile))
+	if err != nil {
+		return nil, err
 	}
+	tlsConfig.ClientCertificateKey.FromBytes = keyPEM
 	client, err := vault.New(
 		vault.WithAddress(appConfig.VaultAddr),
 		vault.WithTLS(tlsConfig),
@@ -179,6 +170,43 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 		return nil, err
 	}
 	return &LocalVaultClient{VaultClient: client}, nil
+}
+
+// keyFileField names the key in errors. Errors never echo the path: it comes
+// from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
+const keyFileField = "private key file (certAuthKeyFile in ~/.yubivault/config.yml)"
+
+// readPrivateKey returns the client key, refusing one that group/other can
+// read (fail-secure). The mode is checked on the opened file, so the file that
+// is checked is the file that is read.
+func readPrivateKey(keyPath string) ([]byte, error) {
+	f, err := os.Open(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not open %s: %w", keyFileField, pathErrCause(err))
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("could not stat %s: %w", keyFileField, pathErrCause(err))
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return nil, fmt.Errorf("%s is accessible by group/other (mode %#o); run chmod 600 on it", keyFileField, perm)
+	}
+	keyPEM, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("could not read %s: %w", keyFileField, pathErrCause(err))
+	}
+	return keyPEM, nil
+}
+
+// pathErrCause drops the path from an *fs.PathError and keeps its cause
+// (e.g. "no such file or directory"), so errors.Is still matches.
+func pathErrCause(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }
 
 // selectCertificate picks one paired credential from the card. With no wantCN and exactly

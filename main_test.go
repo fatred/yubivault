@@ -256,19 +256,51 @@ func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 	}
 }
 
-func TestCreateLocalVaultClient_MissingKeyDoesNotLeakPath(t *testing.T) {
-	dir := writeConfig(t, "")
-	appConfig := &AppConfig{
-		VaultAddr:       "https://localhost:8200",
-		CertAuthPemFile: "client-cert.pem",
-		CertAuthKeyFile: "private-secret-name.key",
+func TestCreateLocalVaultClient_KeyErrorsDoNotLeakPath(t *testing.T) {
+	const keyName = "private-secret-name.key"
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, keyPath string)
+		wantIs error
+	}{
+		{"missing", func(*testing.T, string) {}, fs.ErrNotExist},
+		{"unreadable (mode 000)", func(t *testing.T, keyPath string) {
+			if os.Geteuid() == 0 {
+				t.Skip("root can read mode 000 files")
+			}
+			if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(keyPath, 0); err != nil {
+				t.Fatal(err)
+			}
+		}, fs.ErrPermission},
+		{"directory", func(t *testing.T, keyPath string) {
+			if err := os.Mkdir(keyPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, nil},
 	}
-	_, err := CreateLocalVaultClient(appConfig, dir)
-	if err == nil || !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("expected not-exist error, got %v", err)
-	}
-	if strings.Contains(err.Error(), appConfig.CertAuthKeyFile) {
-		t.Errorf("error leaks key file path: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeConfig(t, "")
+			keyPath := dir + "/.yubivault/" + keyName
+			tt.setup(t, keyPath)
+			_, err := CreateLocalVaultClient(&AppConfig{
+				VaultAddr:       "https://localhost:8200",
+				CertAuthPemFile: "client-cert.pem",
+				CertAuthKeyFile: keyName,
+			}, dir)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if tt.wantIs != nil && !errors.Is(err, tt.wantIs) {
+				t.Errorf("errors.Is(%v, %v) = false", err, tt.wantIs)
+			}
+			if strings.Contains(err.Error(), keyName) {
+				t.Errorf("error leaks key file path: %v", err)
+			}
+		})
 	}
 }
 
