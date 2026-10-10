@@ -9,8 +9,9 @@ on:
   pull_request:
     # Run on all pull requests (no branch filter)
   schedule:
-    # Weekly, so newly published advisories are caught without a code change.
-    - cron: '17 6 * * 1'
+    # 1st and 15th of the month, so newly published advisories are caught
+    # without a code change.
+    - cron: '17 6 1,15 * *'
 
 # Actions are pinned to commit SHAs (tag in the trailing comment); Dependabot
 # (.github/dependabot.yml) keeps the pins current.
