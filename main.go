@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -301,7 +302,14 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 }
 
 func main() {
-	if err := run(); err != nil {
+	err := run(os.Args[1:])
+	var sigErr signalError
+	if errors.As(err, &sigErr) {
+		// Cleanup has already run; exit like the shell would have for this signal.
+		fmt.Fprintln(os.Stderr, sigErr)
+		os.Exit(128 + int(sigErr.sig))
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -309,12 +317,12 @@ func main() {
 // run holds the program body so deferred cleanup (notably closing the
 // crypto11/PKCS#11 context) runs on every error path; log.Fatal in main only
 // executes after run has returned and its defers have completed.
-func run() error {
-	ctx := context.Background()
-	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
-	yubikeyFlag := flag.Bool("yubi", false, "User cert and key stored in a yubikey only")
-	versionFlag := flag.Bool("version", false, "Show version")
-	flag.Parse()
+func run(args []string) error {
+	fs := flag.NewFlagSet("yubivault", flag.ExitOnError)
+	localFlag := fs.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
+	yubikeyFlag := fs.Bool("yubi", false, "User cert and key stored in a yubikey only")
+	versionFlag := fs.Bool("version", false, "Show version")
+	fs.Parse(args)
 
 	if *versionFlag {
 		fmt.Println(Version)
@@ -342,18 +350,56 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// Catch SIGINT/SIGTERM only once a client exists: the PIN prompt above
+	// blocks in term.ReadPassword and must stay killable by Ctrl-C.
+	ctx, stop := cancelOnSignal()
+	defer stop()
+	token, err := loginAndClose(ctx, authClient, appConfig)
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
+		return err
+	}
+	fmt.Println(token)
+	return nil
+}
+
+// loginAndClose authenticates with authClient and always closes it, whatever
+// the outcome, so the PKCS#11 session is released before the process exits.
+func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *AppConfig) (string, error) {
 	defer func() {
 		if cerr := authClient.Close(); cerr != nil {
 			log.Printf("closing auth client: %v", cerr)
 		}
 	}()
+	return AuthenticateAndGetToken(&RealVaultClient{Client: authClient.GetVaultClient()}, appConfig, ctx)
+}
 
-	client := authClient.GetVaultClient()
-	vaultClient := &RealVaultClient{Client: client}
-	token, err := AuthenticateAndGetToken(vaultClient, appConfig, ctx)
-	if err != nil {
-		return err
+// signalError is the cancellation cause when SIGINT/SIGTERM stops a login.
+type signalError struct{ sig syscall.Signal }
+
+func (e signalError) Error() string { return "interrupted by " + e.sig.String() }
+
+// cancelOnSignal returns a context that is cancelled with a signalError on
+// SIGINT or SIGTERM, so in-flight Vault requests abort and deferred cleanup
+// runs. After the first signal the default action is restored, so a second one
+// terminates immediately. stop releases the handler.
+func cancelOnSignal() (ctx context.Context, stop func()) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case s := <-sigs:
+			signal.Stop(sigs)
+			cancel(signalError{s.(syscall.Signal)})
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, func() {
+		signal.Stop(sigs)
+		cancel(nil)
 	}
-	fmt.Println(token)
-	return nil
 }
