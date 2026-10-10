@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -300,6 +301,15 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 }
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run holds the program body so deferred cleanup (notably closing the
+// crypto11/PKCS#11 context) runs on every error path; log.Fatal in main only
+// executes after run has returned and its defers have completed.
+func run() error {
 	ctx := context.Background()
 	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
 	yubikeyFlag := flag.Bool("yubi", false, "User cert and key stored in a yubikey only")
@@ -308,19 +318,19 @@ func main() {
 
 	if *versionFlag {
 		fmt.Println(Version)
-		os.Exit(0)
+		return nil
 	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	appConfig, err := LoadConfig(homeDir)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	if (!*localFlag && !*yubikeyFlag) || (*localFlag && *yubikeyFlag) {
-		log.Fatal("Pick -local or -yubi")
+	if *localFlag == *yubikeyFlag {
+		return errors.New("Pick -local or -yubi")
 	}
 
 	var authClient VaultAuthClient
@@ -330,16 +340,20 @@ func main() {
 		authClient, err = CreateYubikeyVaultClient(appConfig)
 	}
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-
-	defer authClient.Close()
+	defer func() {
+		if cerr := authClient.Close(); cerr != nil {
+			log.Printf("closing auth client: %v", cerr)
+		}
+	}()
 
 	client := authClient.GetVaultClient()
 	vaultClient := &RealVaultClient{Client: client}
 	token, err := AuthenticateAndGetToken(vaultClient, appConfig, ctx)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Println(token)
+	return nil
 }
