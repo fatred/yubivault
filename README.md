@@ -63,10 +63,13 @@ Needed a lot of help along the way. These were helpful
 * an example of using the Thales pkcs11 crypto library to access the certs/keys off a smartcard: https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9
 * the official p11tool from Thales: https://github.com/thales-e-security/p11tool
 
-### Building on Apple Silicon
+### macOS (Apple Silicon)
 
-for reasons of _i dont know_ you cant build this in the pipeline with darwin arm64. 
+Releases include `yubivault-darwin-arm64`, built natively on a macOS runner (crypto11 needs cgo, so it cannot be cross-compiled from Linux). The binary is not notarized, so after downloading it with a browser, clear the quarantine flag before running it:
 
-clone the repo to your machine, checkout the tag for the release you want, run `go mod tidy` and then build it with `go build -ldflags "-X 'main.Version=vX.X.X'"` (where x.x.x is your tag version).
+```shell
+xattr -d com.apple.quarantine yubivault-darwin-arm64
+chmod +x yubivault-darwin-arm64
+```
 
-If you want to just rawdog main, then you can simply `go build .`
+To build from source instead, check out the tag you want and run `go build -ldflags "-X 'main.Version=vX.Y.Z'"`, or just `go build .` on `main`.

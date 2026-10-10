@@ -1,6 +1,11 @@
-permissions:
-  contents: write
 name: Release
+
+# Least privilege by default; only the release job can write.
+# Every action in this workflow is pinned to a commit SHA (tag in the trailing
+# comment): the build job produces the shipped binaries and the release job
+# holds a write token, so a moved tag must not change what runs here.
+permissions:
+  contents: read
 
 on:
   push:
@@ -9,47 +14,67 @@ on:
 
 jobs:
   build-release:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux]
-        goarch: [amd64]
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+          # Built natively: crypto11 needs cgo (miekg/pkcs11), which does not
+          # cross-compile from the Linux runner. macos-latest is Apple Silicon.
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
       - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          VERSION: ${{ github.ref_name }}
         run: |
+          # cgo needs a native build: fail if the runner is not the target.
+          test "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" = "$GOOS/$GOARCH"
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "-X 'main.Version=${{ github.ref_name }}'" -o dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
+          go build -ldflags "-X 'main.Version=$VERSION'" -o "dist/yubivault-$GOOS-$GOARCH"
+          file "dist/yubivault-$GOOS-$GOARCH"
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
   release:
     needs: build-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The changelog builder lists merged PRs. A public repo works without
+      # this (v1.3.0 did), but the action documents it as required.
+      pull-requests: read
     steps:
       # The changelog builder reads .github/changelog-config.json from the
       # workspace; without a checkout it silently falls back to its default
       # categories and every PR lands under "Uncategorized".
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
       - name: Generate changelog
-        uses: mikepenz/release-changelog-builder-action@v6
+        uses: mikepenz/release-changelog-builder-action@aa013739bbc8e7067dbbecd4525ff11aeb51a84b # v6.4.0
         id: changelog
         with:
           configuration: .github/changelog-config.json
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/**
           name: Release ${{ github.ref_name }}
