@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # GitHub Actions in .github/workflows, including the SHA pins (Dependabot
+  # updates the SHA and the version comment together).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Go modules in go.mod, including the govulncheck tool dependency.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies]
+    groups:
+      go-modules:
+        patterns: ["*"]
