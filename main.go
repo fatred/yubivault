@@ -379,14 +379,7 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 }
 
 func main() {
-	err := run(os.Args[1:])
-	var sigErr signalError
-	if errors.As(err, &sigErr) {
-		// Cleanup has already run; exit like the shell would have for this signal.
-		fmt.Fprintln(os.Stderr, sigErr)
-		os.Exit(128 + int(sigErr.sig))
-	}
-	if err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -433,8 +426,11 @@ func run(args []string) error {
 
 	// From here on a PKCS#11 context may be open, so SIGINT/SIGTERM cancel ctx
 	// instead of killing the process; every path below closes the client.
-	ctx, stop := cancelOnSignal()
+	// Once ctx is cancelled, stop restores the default action, so a second
+	// signal terminates immediately.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	context.AfterFunc(ctx, stop)
 
 	var authClient VaultAuthClient
 	if *localFlag {
@@ -452,7 +448,7 @@ func run(args []string) error {
 	}
 	// A pre-cancelled ctx fails the login immediately; the client is still closed.
 	token, err := loginAndClose(ctx, authClient, appConfig)
-	// A signal that raced a successful login still wins: no token, 128+signo.
+	// A signal that raced a successful login still wins: no token, exit 1.
 	if cause := context.Cause(ctx); cause != nil {
 		return cause
 	}
@@ -472,31 +468,4 @@ func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *A
 		}
 	}()
 	return AuthenticateAndGetToken(&RealVaultClient{Client: authClient.GetVaultClient()}, appConfig, ctx)
-}
-
-// signalError is the cancellation cause when SIGINT/SIGTERM stops a login.
-type signalError struct{ sig syscall.Signal }
-
-func (e signalError) Error() string { return "interrupted by " + e.sig.String() }
-
-// cancelOnSignal returns a context that is cancelled with a signalError on
-// SIGINT or SIGTERM, so in-flight Vault requests abort and deferred cleanup
-// runs. After the first signal the default action is restored, so a second one
-// terminates immediately. stop releases the handler.
-func cancelOnSignal() (ctx context.Context, stop func()) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		select {
-		case s := <-sigs:
-			signal.Stop(sigs)
-			cancel(signalError{s.(syscall.Signal)})
-		case <-ctx.Done():
-		}
-	}()
-	return ctx, func() {
-		signal.Stop(sigs)
-		cancel(nil)
-	}
 }
