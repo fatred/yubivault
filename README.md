@@ -1,6 +1,6 @@
 # yubivault
 
-Logs in to HashiCorp Vault with TLS certificate auth and prints the resulting token. The client certificate and key come either from files on disk (`-local`) or from a YubiKey's PIV applet over PKCS#11 (`-yubi`).
+Logs in to HashiCorp Vault or OpenBao with TLS certificate auth and prints the resulting token. The client certificate and key come either from files on disk (`-local`) or from a YubiKey's PIV applet over PKCS#11 (`-yubi`).
 
 ## Install
 
@@ -87,14 +87,14 @@ pkcs11-tool --module /path/to/opensc-pkcs11.so --list-slots
 
 Use the `serial num` value of the slot for your YubiKey.
 
-**Vault:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. For example:
+**Vault / OpenBao:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. For example (use `bao` instead of `vault` for OpenBao):
 
 ```shell
 vault auth enable -path=cert cert
 vault write auth/cert/certs/my-role certificate=@client-ca.pem token_policies=default
 ```
 
-Vault's server certificate must be trusted by the system trust store. On Linux you can point `SSL_CERT_FILE` at a CA bundle instead.
+The server's TLS certificate must be trusted by the system trust store. On Linux you can point `SSL_CERT_FILE` at a CA bundle instead.
 
 ## Usage
 
@@ -107,7 +107,7 @@ yubivault -version
 The token is the only thing written to stdout. The PIN prompt and errors go to stderr, so you can capture the token directly:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"
+export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
 ```
 
 - Set `TOKEN_PIN` to skip the PIN prompt in non-interactive use.
