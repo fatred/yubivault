@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
@@ -499,5 +500,47 @@ func TestCancelOnSignal(t *testing.T) {
 	var sigErr signalError
 	if !errors.As(context.Cause(ctx), &sigErr) || sigErr.sig != syscall.SIGINT {
 		t.Errorf("cause = %v, want signalError{SIGINT}", context.Cause(ctx))
+	}
+}
+
+// TestNewHTTPClient_UsesProxyFromEnvironment runs the request in a child test
+// process: ProxyFromEnvironment reads HTTPS_PROXY once per process, so the
+// variable must be set before the first lookup for the result to be
+// independent of test order.
+func TestNewHTTPClient_UsesProxyFromEnvironment(t *testing.T) {
+	if os.Getenv("YUBIVAULT_PROXY_TEST_CHILD") == "1" {
+		// The proxy refuses the tunnel, so an error is expected; the parent
+		// checks what reached the proxy.
+		_, _ = newHTTPClient(&tls.Config{MinVersion: tls.VersionTLS12}).Get("https://vault.invalid:8200/v1/sys/health")
+		return
+	}
+	connects := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			select {
+			case connects <- r.Host:
+			default:
+			}
+		}
+		http.Error(w, "no upstream", http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestNewHTTPClient_UsesProxyFromEnvironment$")
+	cmd.Env = append(os.Environ(),
+		"YUBIVAULT_PROXY_TEST_CHILD=1",
+		"HTTPS_PROXY="+proxy.URL, "https_proxy="+proxy.URL,
+		"NO_PROXY=", "no_proxy=",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("child test failed: %v\n%s", err, out)
+	}
+	select {
+	case host := <-connects:
+		if host != "vault.invalid:8200" {
+			t.Errorf("proxy got CONNECT %q, want vault.invalid:8200", host)
+		}
+	default:
+		t.Error("request did not go through HTTPS_PROXY")
 	}
 }
