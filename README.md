@@ -1,75 +1,120 @@
 # yubivault
 
-simple binary that will use a local cert/key pair on disk or on a yubikey to login to vault and give you a token for subesequent use in automations etc.
+Logs in to HashiCorp Vault with TLS certificate auth and prints the resulting token. The client certificate and key come either from files on disk (`-local`) or from a YubiKey's PIV applet over PKCS#11 (`-yubi`).
 
-## PreReqs
+## Install
 
-0. install opensc 
-  a. macOS: `brew install opensc`
-  b. linux: `apt install opensc` # or whatever your package manager is...
-1. Make a folder called `mkdir -p ~/.yubivault`
-2. Restrict it to you only `chmod 700 ~/.yubivault` (and `chmod 600` the key file)
-3. Make a config file:
+Download the binary for your platform from the [latest release](https://github.com/fatred/yubivault/releases/latest) and put it on your `PATH`. Supported platforms:
+
+- Linux x86-64: Debian 12 and 13, Ubuntu 24.04 and 26.04 (any distribution with glibc 2.34 or newer should work)
+- macOS on Apple Silicon
+
+Linux:
+
+```shell
+curl -fsSL -o yubivault https://github.com/fatred/yubivault/releases/latest/download/yubivault-linux-amd64
+chmod +x yubivault
+sudo mv yubivault /usr/local/bin/
+```
+
+macOS:
+
+```shell
+curl -fsSL -o yubivault https://github.com/fatred/yubivault/releases/latest/download/yubivault-darwin-arm64
+chmod +x yubivault
+sudo mv yubivault /usr/local/bin/
+```
+
+The macOS binary is not notarized. Downloading it with `curl` as above avoids Gatekeeper. If you downloaded it with a browser, clear the quarantine flag first: `xattr -d com.apple.quarantine yubivault`.
+
+For `-yubi` you also need OpenSC, which provides the PKCS#11 module:
+
+```shell
+brew install opensc      # macOS
+sudo apt install opensc  # Debian/Ubuntu
+```
+
+### From source
+
+Requires Go 1.27 or newer and a C compiler (the PKCS#11 bindings use cgo):
+
+```shell
+go install github.com/fatred/yubivault@latest
+```
+
+## Configure
+
+Create the config directory and restrict it to your user:
+
+```shell
+mkdir -p ~/.yubivault
+chmod 700 ~/.yubivault
+```
+
+Then create `~/.yubivault/config.yml`:
 
 ```yaml
----
 # always required
-vaultAddr: https://vault.problemofnetwork.com:8200
-certAuthName: network_admin_g2
-certAuthMount: network_admin
-# required for -local (file names inside ~/.yubivault)
+vaultAddr: https://vault.example.com:8200
+certAuthMount: cert           # path the cert auth method is mounted at
+certAuthName: my-role         # cert auth role to log in as
+
+# required for -local: file names inside ~/.yubivault
 certAuthPemFile: client-cert.pem
 certAuthKeyFile: client-cert.key
+
 # required for -yubi
-openscPath: "/opt/homebrew/Cellar/opensc/0.27.1/lib/pkcs11/opensc-pkcs11.so"
-# debian
-# openscPath: "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so"
+openscPath: /opt/homebrew/opt/opensc/lib/opensc-pkcs11.so   # macOS
+# openscPath: /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so    # Debian/Ubuntu
 yubikeyPivSerial: "1234567890123456"
-# optional: only used to label the PIN prompt
+
+# optional: shown in the PIN prompt
 yubikeySerial: "12345678"
-# optional: only needed when the card holds more than one credential.
-# Set it to the certificate Subject CN of the credential you want.
-# yubikeyCertCN: "network_admin_g2"
+# optional: only needed if the YubiKey holds more than one certificate;
+# set it to the Subject CN of the one to use
+# yubikeyCertCN: my-cert-cn
 ```
 
-Unknown keys are rejected, so a typo or a retired setting (`yubikeyPivIndex`, `yubikeyPivLabel`) fails with `field … not found` instead of being silently ignored.
+Unknown keys are rejected, so a typo fails with `field ... not found` instead of being ignored.
 
-4a. for local auth: put valid cert/key pair into that path
+**`-local`:** put the certificate and key in `~/.yubivault` and run `chmod 600` on the key. yubivault refuses a key that group or other can read.
 
-4b. for yubi auth: 
-  i) configure the parameters based on the output from `p11tool  --list-tokens`.
-  ii) configure the opensc path based on the package managers outputs. e.g. `brew info opensc` or check your package manager repo like so: https://packages.debian.org/trixie/amd64/opensc-pkcs11/filelist
-
-## How it works
-
-local:
-```shell
-$ yubivault -local
-s.pUeO2Nr3P9aBRHasdfasdfasdfasdf
-```
-
-yubikey:
-```shell
-$ yubivault -yubi
-PIN for 12345678: 
-s.LtSpaGkxDq0Nrrrxlolasdfsasfdsw
-```
-
-
-### Credits
-
-Needed a lot of help along the way. These were helpful
-
-* an example of using the Thales pkcs11 crypto library to access the certs/keys off a smartcard: https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9
-* the official p11tool from Thales: https://github.com/thales-e-security/p11tool
-
-### macOS (Apple Silicon)
-
-Releases include `yubivault-darwin-arm64`, built natively on a macOS runner (crypto11 needs cgo, so it cannot be cross-compiled from Linux). The binary is not notarized, so after downloading it with a browser, clear the quarantine flag before running it:
+**`-yubi`:** `yubikeyPivSerial` is the PKCS#11 token serial, not the serial printed on the YubiKey. With the YubiKey inserted, find it with:
 
 ```shell
-xattr -d com.apple.quarantine yubivault-darwin-arm64
-chmod +x yubivault-darwin-arm64
+pkcs11-tool --module /path/to/opensc-pkcs11.so --list-slots
 ```
 
-To build from source instead, check out the tag you want and run `go build -ldflags "-X 'main.Version=vX.Y.Z'"`, or just `go build .` on `main`.
+Use the `serial num` value of the slot for your YubiKey.
+
+**Vault:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. For example:
+
+```shell
+vault auth enable -path=cert cert
+vault write auth/cert/certs/my-role certificate=@client-ca.pem token_policies=default
+```
+
+Vault's server certificate must be trusted by the system trust store. On Linux you can point `SSL_CERT_FILE` at a CA bundle instead.
+
+## Usage
+
+```shell
+yubivault -local     # cert and key from ~/.yubivault
+yubivault -yubi      # cert and key from the YubiKey; prompts for the PIN
+yubivault -version
+```
+
+The token is the only thing written to stdout. The PIN prompt and errors go to stderr, so you can capture the token directly:
+
+```shell
+export VAULT_TOKEN="$(yubivault -yubi)"
+```
+
+- Set `TOKEN_PIN` to skip the PIN prompt in non-interactive use.
+- `HTTPS_PROXY` and `NO_PROXY` are honoured in both modes.
+- The exit status is non-zero on any failure. On Ctrl-C or SIGTERM it is 130 or 143, after the YubiKey session has been closed.
+
+## Credits
+
+- Example of reading certificates and keys from a smartcard with crypto11: https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9
+- p11tool: https://github.com/thales-e-security/p11tool
