@@ -87,12 +87,7 @@ pkcs11-tool --module /path/to/opensc-pkcs11.so --list-slots
 
 Use the `serial num` value of the slot for your YubiKey.
 
-**Vault / OpenBao:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. For example (use `bao` instead of `vault` for OpenBao):
-
-```shell
-vault auth enable -path=cert cert
-vault write auth/cert/certs/my-role certificate=@client-ca.pem token_policies=default
-```
+**Vault / OpenBao:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. [PKI-SETUP.md](PKI-SETUP.md) walks through the whole setup step by step: creating a CA with certstrap, generating the key on the YubiKey, signing and importing the certificate, and configuring the cert auth method and an admin policy.
 
 The server's TLS certificate must be trusted by the system trust store. On Linux you can point `SSL_CERT_FILE` at a CA bundle instead.
 
