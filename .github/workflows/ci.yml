@@ -11,24 +11,27 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple Silicon; it also proves the darwin/arm64
+        # release build, which needs cgo (miekg/pkcs11) and so cannot be
+        # cross-compiled from Linux.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
       - name: Set up Go
+        # Caches the module and build caches keyed on go.sum by default.
         uses: actions/setup-go@v7
         with:
           go-version: '1.27'
-      - name: Cache Go modules
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Install dependencies
-        run: go mod tidy
+      - name: Check go.mod/go.sum are tidy
+        run: go mod tidy -diff
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        run: go vet ./...
       - name: Run tests
-        run: go test
+        run: go test -race ./...

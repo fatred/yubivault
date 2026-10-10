@@ -1,6 +1,8 @@
-permissions:
-  contents: write
 name: Release
+
+# Least privilege by default; only the release job can write.
+permissions:
+  contents: read
 
 on:
   push:
@@ -9,11 +11,18 @@ on:
 
 jobs:
   build-release:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux]
-        goarch: [amd64]
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+          # Built natively: crypto11 needs cgo (miekg/pkcs11), which does not
+          # cross-compile from the Linux runner. macos-latest is Apple Silicon.
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -22,9 +31,17 @@ jobs:
         with:
           go-version: '1.27'
       - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          VERSION: ${{ github.ref_name }}
         run: |
+          # cgo needs a native build: fail if the runner is not the target.
+          test "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" = "$GOOS/$GOARCH"
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "-X 'main.Version=${{ github.ref_name }}'" -o dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
+          go build -ldflags "-X 'main.Version=$VERSION'" -o "dist/yubivault-$GOOS-$GOARCH"
+          file "dist/yubivault-$GOOS-$GOARCH"
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -33,6 +50,8 @@ jobs:
   release:
     needs: build-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       # The changelog builder reads .github/changelog-config.json from the
       # workspace; without a checkout it silently falls back to its default
@@ -43,13 +62,15 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: dist
+      # Third-party actions run with a write token here, so they are pinned to
+      # a commit SHA (tag in the trailing comment) rather than a movable tag.
       - name: Generate changelog
-        uses: mikepenz/release-changelog-builder-action@v6
+        uses: mikepenz/release-changelog-builder-action@aa013739bbc8e7067dbbecd4525ff11aeb51a84b # v6.4.0
         id: changelog
         with:
           configuration: .github/changelog-config.json
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/**
           name: Release ${{ github.ref_name }}
