@@ -240,11 +240,15 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVa
 		MinVersion:         tls.VersionTLS12,
 	}
 
+	// Start from a clone of http.DefaultTransport rather than a bare
+	// http.Transport, which has no Proxy func (HTTPS_PROXY/NO_PROXY ignored),
+	// no dial/handshake/idle timeouts and, with a custom TLSClientConfig, no
+	// HTTP/2. -local gets all of these from vault-client-go's default client.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
 	customClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-		Timeout: 30 * time.Second,
+		Transport: transport,
+		Timeout:   30 * time.Second,
 	}
 
 	client, err := vault.New(
