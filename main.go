@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ThalesGroup/crypto11"
+	"github.com/eclipse-keypont/crypto11"
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
-	"gopkg.in/yaml.v2"
 )
 
 var Version = "dev"

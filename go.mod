@@ -1,25 +1,24 @@
 module github.com/fatred/yubivault
 
-go 1.26.0
-
-require github.com/hashicorp/vault-client-go v0.4.3
+go 1.27.0
 
 require (
-	github.com/miekg/pkcs11 v1.1.1 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/thales-e-security/pool v0.0.2 // indirect
+	github.com/eclipse-keypont/crypto11 v1.6.8
+	github.com/hashicorp/vault-client-go v0.4.3
+	go.yaml.in/yaml/v3 v3.0.5
+	golang.org/x/term v0.47.0
 )
 
 require (
-	github.com/ThalesGroup/crypto11 v1.4.1
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/miekg/pkcs11 v1.1.2 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0
-	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af // indirect
-	gopkg.in/yaml.v2 v2.4.0
+	github.com/thales-e-security/pool v0.0.2 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
 )
