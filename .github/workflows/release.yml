@@ -16,17 +16,17 @@ jobs:
         goarch: [amd64]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
+          go-version: '1.27'
       - name: Build binary
         run: |
           mkdir -p dist
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "-X 'main.Version=${{ github.ref_name }}'" -o dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/yubivault-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -34,17 +34,22 @@ jobs:
     needs: build-release
     runs-on: ubuntu-latest
     steps:
+      # The changelog builder reads .github/changelog-config.json from the
+      # workspace; without a checkout it silently falls back to its default
+      # categories and every PR lands under "Uncategorized".
+      - name: Checkout code
+        uses: actions/checkout@v7
       - name: Download all artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Generate changelog
-        uses: mikepenz/release-changelog-builder-action@v4
+        uses: mikepenz/release-changelog-builder-action@v6
         id: changelog
         with:
           configuration: .github/changelog-config.json
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/**
           name: Release ${{ github.ref_name }}
