@@ -6,11 +6,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
@@ -242,54 +247,34 @@ func TestYubikeyVaultClient_CloseNil(t *testing.T) {
 	}
 }
 
-func TestCreateYubikeyVaultClient_ErrorPaths(t *testing.T) {
-	tests := []struct {
-		name       string
-		setupEnv   func()
-		cleanupEnv func()
-		appConfig  *AppConfig
-		expectErr  string
-	}{
-		{
-			name:       "empty PIN from environment",
-			setupEnv:   func() { os.Unsetenv("TOKEN_PIN") },
-			cleanupEnv: func() {},
-			appConfig: &AppConfig{
-				YubikeySerial: "12345",
-			},
-			expectErr: "could not read PIN code",
-		},
-		{
-			name:       "invalid OpenSC path",
-			setupEnv:   func() { os.Setenv("TOKEN_PIN", "123456") },
-			cleanupEnv: func() { os.Unsetenv("TOKEN_PIN") },
-			appConfig: &AppConfig{
-				OpenScPath:       "/nonexistent/path.so",
-				YubikeyPivSerial: "invalid",
-				YubikeySerial:    "12345",
-			},
-			expectErr: "could not configure crypto11",
-		},
+func TestResolvePin(t *testing.T) {
+	t.Run("TOKEN_PIN wins over prompt", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", "654321")
+		pin, err := resolvePin(&AppConfig{YubikeySerial: "12345"}, strings.NewReader("999999\n"), io.Discard)
+		if err != nil || pin != "654321" {
+			t.Errorf("got %q, %v; want TOKEN_PIN value", pin, err)
+		}
+	})
+	t.Run("no TOKEN_PIN and empty input", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", "")
+		if _, err := resolvePin(&AppConfig{YubikeySerial: "12345"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "need to enter PIN") {
+			t.Errorf("expected empty-PIN error, got %v", err)
+		}
+	})
+}
+
+func TestCreateYubikeyVaultClient_InvalidModule(t *testing.T) {
+	client, err := CreateYubikeyVaultClient(&AppConfig{
+		OpenScPath:       "/nonexistent/path.so",
+		YubikeyPivSerial: "invalid",
+		YubikeySerial:    "12345",
+	}, "123456")
+	if err == nil {
+		client.Close()
+		t.Fatal("expected error, got nil")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupEnv != nil {
-				tt.setupEnv()
-				defer tt.cleanupEnv()
-			}
-
-			client, err := CreateYubikeyVaultClient(tt.appConfig)
-
-			if err == nil {
-				defer client.Close()
-				t.Fatal("expected error, got nil")
-			}
-
-			if !strings.Contains(err.Error(), tt.expectErr) {
-				t.Errorf("expected error containing %q, got %q", tt.expectErr, err)
-			}
-		})
+	if !strings.Contains(err.Error(), "could not configure crypto11") {
+		t.Errorf("expected crypto11 configure error, got %q", err)
 	}
 }
 
@@ -331,5 +316,65 @@ func TestSelectCertificate(t *testing.T) {
 				t.Errorf("expected returned CN %q, got %+v", tt.gotCN, got.Leaf)
 			}
 		})
+	}
+}
+
+// closeRecorder is a VaultAuthClient backed by a real vault.Client that
+// records whether Close was called.
+type closeRecorder struct {
+	client *vault.Client
+	closed bool
+}
+
+func (c *closeRecorder) GetVaultClient() *vault.Client { return c.client }
+func (c *closeRecorder) Close() error                  { c.closed = true; return nil }
+
+func TestLoginAndClose_ClosesOnFailure(t *testing.T) {
+	// Vault rejects the login with a 400, as it does for an unknown cert role.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"errors":["failed to match all constraints for this login certificate"]}`)
+	}))
+	defer srv.Close()
+	client, err := vault.New(vault.WithAddress(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appConfig := &AppConfig{CertAuthName: "nope", CertAuthMount: "cert"}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, ctx := range map[string]context.Context{"vault rejects login": context.Background(), "context cancelled": cancelled} {
+		t.Run(name, func(t *testing.T) {
+			auth := &closeRecorder{client: client}
+			if _, err := loginAndClose(ctx, auth, appConfig); err == nil {
+				t.Fatal("expected login error")
+			}
+			if !auth.closed {
+				t.Error("auth client not closed after failed login")
+			}
+		})
+	}
+}
+
+func TestCancelOnSignal(t *testing.T) {
+	ctx, stop := cancelOnSignal()
+	defer stop()
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Signal(os.Interrupt); err != nil {
+		t.Skipf("cannot signal self on this platform: %v", err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("context not cancelled by SIGINT")
+	}
+	var sigErr signalError
+	if !errors.As(context.Cause(ctx), &sigErr) || sigErr.sig != syscall.SIGINT {
+		t.Errorf("cause = %v, want signalError{SIGINT}", context.Cause(ctx))
 	}
 }

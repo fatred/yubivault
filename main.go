@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -182,21 +184,26 @@ func certCNs(pairs []tls.Certificate) string {
 	return strings.Join(names, ", ")
 }
 
-func CreateYubikeyVaultClient(appConfig *AppConfig) (*YubikeyVaultClient, error) {
+// resolvePin returns $TOKEN_PIN, or prompts on prompt and reads the PIN from
+// in (os.Stdin gets no-echo terminal input; see ReadPin).
+func resolvePin(appConfig *AppConfig, in io.Reader, prompt io.Writer) (string, error) {
+	if tokenPin := os.Getenv("TOKEN_PIN"); tokenPin != "" {
+		return tokenPin, nil
+	}
+	tokenPin, err := ReadPin(appConfig.YubikeySerial, in, prompt)
+	if err != nil {
+		return "", fmt.Errorf("could not read PIN code: %w", err)
+	}
+	tokenPin = strings.TrimSpace(tokenPin)
+	if tokenPin == "" {
+		return "", fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
+	}
+	return tokenPin, nil
+}
+
+func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVaultClient, error) {
 	var err error
 	var cryptoCtx *crypto11.Context
-
-	tokenPin := os.Getenv("TOKEN_PIN")
-	if tokenPin == "" {
-		tokenPin, err = ReadPin(appConfig.YubikeySerial, os.Stdin, os.Stderr)
-		if err != nil {
-			return nil, fmt.Errorf("could not read PIN code: %w", err)
-		}
-		tokenPin = strings.TrimSpace(tokenPin)
-		if tokenPin == "" {
-			return nil, fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
-		}
-	}
 
 	cryptoCtx, err = crypto11.Configure(&crypto11.Config{
 		Path:        appConfig.OpenScPath,
@@ -300,46 +307,120 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 }
 
 func main() {
-	ctx := context.Background()
-	localFlag := flag.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
-	yubikeyFlag := flag.Bool("yubi", false, "User cert and key stored in a yubikey only")
-	versionFlag := flag.Bool("version", false, "Show version")
-	flag.Parse()
+	err := run(os.Args[1:])
+	var sigErr signalError
+	if errors.As(err, &sigErr) {
+		// Cleanup has already run; exit like the shell would have for this signal.
+		fmt.Fprintln(os.Stderr, sigErr)
+		os.Exit(128 + int(sigErr.sig))
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run holds the program body so deferred cleanup (notably closing the
+// crypto11/PKCS#11 context) runs on every error path; log.Fatal in main only
+// executes after run has returned and its defers have completed.
+func run(args []string) error {
+	fs := flag.NewFlagSet("yubivault", flag.ExitOnError)
+	localFlag := fs.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
+	yubikeyFlag := fs.Bool("yubi", false, "User cert and key stored in a yubikey only")
+	versionFlag := fs.Bool("version", false, "Show version")
+	fs.Parse(args)
 
 	if *versionFlag {
 		fmt.Println(Version)
-		os.Exit(0)
+		return nil
 	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	appConfig, err := LoadConfig(homeDir)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	if (!*localFlag && !*yubikeyFlag) || (*localFlag && *yubikeyFlag) {
-		log.Fatal("Pick -local or -yubi")
+	if *localFlag == *yubikeyFlag {
+		return errors.New("Pick -local or -yubi")
 	}
+
+	// Read the PIN before catching signals: the prompt blocks in
+	// term.ReadPassword and must stay killable by Ctrl-C.
+	var tokenPin string
+	if *yubikeyFlag {
+		if tokenPin, err = resolvePin(appConfig, os.Stdin, os.Stderr); err != nil {
+			return err
+		}
+	}
+
+	// From here on a PKCS#11 context may be open, so SIGINT/SIGTERM cancel ctx
+	// instead of killing the process; every path below closes the client.
+	ctx, stop := cancelOnSignal()
+	defer stop()
 
 	var authClient VaultAuthClient
 	if *localFlag {
 		authClient, err = CreateLocalVaultClient(appConfig, homeDir)
 	} else {
-		authClient, err = CreateYubikeyVaultClient(appConfig)
+		// Not ctx-aware, but local and short; its own defer closes the
+		// context on error, and a signal received meanwhile is acted on below.
+		authClient, err = CreateYubikeyVaultClient(appConfig, tokenPin)
 	}
 	if err != nil {
-		log.Fatal(err)
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
+		return err
 	}
-
-	defer authClient.Close()
-
-	client := authClient.GetVaultClient()
-	vaultClient := &RealVaultClient{Client: client}
-	token, err := AuthenticateAndGetToken(vaultClient, appConfig, ctx)
+	// A pre-cancelled ctx fails the login immediately; the client is still closed.
+	token, err := loginAndClose(ctx, authClient, appConfig)
+	// A signal that raced a successful login still wins: no token, 128+signo.
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Println(token)
+	return nil
+}
+
+// loginAndClose authenticates with authClient and always closes it, whatever
+// the outcome, so the PKCS#11 session is released before the process exits.
+func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *AppConfig) (string, error) {
+	defer func() {
+		if cerr := authClient.Close(); cerr != nil {
+			log.Printf("closing auth client: %v", cerr)
+		}
+	}()
+	return AuthenticateAndGetToken(&RealVaultClient{Client: authClient.GetVaultClient()}, appConfig, ctx)
+}
+
+// signalError is the cancellation cause when SIGINT/SIGTERM stops a login.
+type signalError struct{ sig syscall.Signal }
+
+func (e signalError) Error() string { return "interrupted by " + e.sig.String() }
+
+// cancelOnSignal returns a context that is cancelled with a signalError on
+// SIGINT or SIGTERM, so in-flight Vault requests abort and deferred cleanup
+// runs. After the first signal the default action is restored, so a second one
+// terminates immediately. stop releases the handler.
+func cancelOnSignal() (ctx context.Context, stop func()) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case s := <-sigs:
+			signal.Stop(sigs)
+			cancel(signalError{s.(syscall.Signal)})
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, func() {
+		signal.Stop(sigs)
+		cancel(nil)
+	}
 }
