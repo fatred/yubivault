@@ -184,12 +184,13 @@ func certCNs(pairs []tls.Certificate) string {
 	return strings.Join(names, ", ")
 }
 
-// resolvePin returns $TOKEN_PIN, or prompts for the PIN on the terminal.
-func resolvePin(appConfig *AppConfig) (string, error) {
+// resolvePin returns $TOKEN_PIN, or prompts on prompt and reads the PIN from
+// in (os.Stdin gets no-echo terminal input; see ReadPin).
+func resolvePin(appConfig *AppConfig, in io.Reader, prompt io.Writer) (string, error) {
 	if tokenPin := os.Getenv("TOKEN_PIN"); tokenPin != "" {
 		return tokenPin, nil
 	}
-	tokenPin, err := ReadPin(appConfig.YubikeySerial, os.Stdin, os.Stderr)
+	tokenPin, err := ReadPin(appConfig.YubikeySerial, in, prompt)
 	if err != nil {
 		return "", fmt.Errorf("could not read PIN code: %w", err)
 	}
@@ -349,7 +350,7 @@ func run(args []string) error {
 	// term.ReadPassword and must stay killable by Ctrl-C.
 	var tokenPin string
 	if *yubikeyFlag {
-		if tokenPin, err = resolvePin(appConfig); err != nil {
+		if tokenPin, err = resolvePin(appConfig, os.Stdin, os.Stderr); err != nil {
 			return err
 		}
 	}
