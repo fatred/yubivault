@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -180,6 +181,8 @@ func TestLoadConfig_Rejects(t *testing.T) {
 		{"retired key", base + "yubikeyPivIndex: 1\n", "field yubikeyPivIndex not found"},
 		{"misspelled key", base + "certAuthKeyfile: client-cert.key\n", "field certAuthKeyfile not found"},
 		{"empty file", "", "is empty"},
+		{"unknown key in second document", base + "---\nunknownLaterDocument: true\n", "single YAML document"},
+		{"empty second document", base + "---\n", "single YAML document"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -249,6 +252,22 @@ func TestCreateLocalVaultClient_RejectsWorldReadableKey(t *testing.T) {
 	}
 	// The configured key path must not leak into the error (it ends up in logs).
 	if strings.Contains(err.Error(), keyPath) || strings.Contains(err.Error(), appConfig.CertAuthKeyFile) {
+		t.Errorf("error leaks key file path: %v", err)
+	}
+}
+
+func TestCreateLocalVaultClient_MissingKeyDoesNotLeakPath(t *testing.T) {
+	dir := writeConfig(t, "")
+	appConfig := &AppConfig{
+		VaultAddr:       "https://localhost:8200",
+		CertAuthPemFile: "client-cert.pem",
+		CertAuthKeyFile: "private-secret-name.key",
+	}
+	_, err := CreateLocalVaultClient(appConfig, dir)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected not-exist error, got %v", err)
+	}
+	if strings.Contains(err.Error(), appConfig.CertAuthKeyFile) {
 		t.Errorf("error leaks key file path: %v", err)
 	}
 }

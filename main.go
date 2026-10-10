@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -115,6 +116,12 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 		}
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	// KnownFields only applies to documents that are decoded, so a second
+	// `---` document would escape the unknown-key check: allow exactly one.
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s must contain a single YAML document", path)
+	}
 	// Reject incomplete config up front rather than producing confusing
 	// downstream errors. Scheme is not enforced: cert-login needs a TLS
 	// handshake, so an http:// endpoint fails safely on its own, and local
@@ -153,7 +160,13 @@ func CreateLocalVaultClient(appConfig *AppConfig, homeDir string) (*LocalVaultCl
 	// The error names the config field rather than echoing the path: the value
 	// comes from CertAuthKeyFile and must not reach logs (CodeQL go/clear-text-logging).
 	if info, err := os.Stat(keyPath); err != nil {
-		return nil, fmt.Errorf("could not stat key file: %w", err)
+		// Keep only the cause (e.g. "no such file or directory"): the
+		// *PathError text would repeat the configured key path.
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		return nil, fmt.Errorf("could not stat private key file (certAuthKeyFile in ~/.yubivault/config.yml): %w", err)
 	} else if info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("private key file (certAuthKeyFile in ~/.yubivault/config.yml) is accessible by group/other (mode %#o); run chmod 600 on it", info.Mode().Perm())
 	}
