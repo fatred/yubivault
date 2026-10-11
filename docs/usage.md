@@ -43,12 +43,7 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 
 1. If `TOKEN_PIN` is set to a non-empty value, it is used. Leading and trailing whitespace is
    trimmed, so `TOKEN_PIN=" 123456 "` works. A whitespace-only value counts as unset.
-2. Otherwise yubivault prompts on **stderr**:
-
-   ```text
-   PIN for 12345678: 
-   ```
-
+2. Otherwise yubivault prompts on **stderr**: `PIN for 12345678:`
    The value after `PIN for ` is `yubikeySerial` if you set it, otherwise empty. Input is read from
    the terminal without echo.
 3. An empty (or whitespace-only) input fails with `need to enter PIN or set via $TOKEN_PIN`.
