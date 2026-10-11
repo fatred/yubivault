@@ -56,17 +56,24 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 4. If stdin is not a terminal — a cron job, a CI step, a pipe — the prompt cannot be read and the
    run fails with `could not read PIN code: ...`. Use `TOKEN_PIN` there.
 
-To keep a PIN out of shell history, and give it only to the yubivault process rather than to every command:
+To keep a PIN out of shell history and give it only to the yubivault process, not every command,
+use this snippet. It also aborts when input ends before the read completes, clearing any partial
+value instead of submitting it.
 
 ```shell
 unset pin new_token
 printf 'YubiKey PIN: ' >&2
-read -s -r pin
-printf '\n' >&2
-if new_token="$(TOKEN_PIN="$pin" yubivault -yubi)"; then
-  export VAULT_TOKEN="$new_token"
-  unset new_token pin
+if read -s -r pin; then
+  printf '\n' >&2
+  if new_token="$(TOKEN_PIN="$pin" yubivault -yubi)"; then
+    export VAULT_TOKEN="$new_token"
+    unset new_token pin
+  else
+    unset new_token pin
+    false
+  fi
 else
+  printf '\n' >&2
   unset new_token pin
   false
 fi

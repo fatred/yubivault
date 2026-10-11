@@ -53,8 +53,8 @@ Preserve these; each is relied on by tests, docs or the shell contract.
 8. **One PKCS#11 context, closed exactly once**, on every path: the constructor's deferred error
    guard and `loginAndClose`'s defer are mutually exclusive; `Close` must not be called twice
    (crypto11 panics on a second close).
-9. **The client certificate is always presented** (`GetClientCertificate`, ignoring advertised CA
-   names) and `MinVersion` stays at TLS 1.2 or higher.
+9. **The client certificate is returned whenever the server requests it**
+   (`GetClientCertificate` ignores advertised CA names); `MinVersion` stays at TLS 1.2 or higher.
 10. **Transport comes from a clone of `http.DefaultTransport`** so proxy support and HTTP/2 are
     inherited; the dial timeout stays 5 seconds, the request timeout 30 seconds, and retries stay
     at one (`RetryMax: 1` with non-zero backoff). Increasing retries on top of connect timeouts is

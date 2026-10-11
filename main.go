@@ -352,10 +352,9 @@ func newVaultClient(addr string, cert tls.Certificate) (*vault.Client, error) {
 	return client, nil
 }
 
-// clientTLSConfig always presents cert, ignoring the CA names the server
-// advertises, as vault-client-go's own WithTLS does. With the plain
-// Certificates field, Go sends no certificate when the advertised names do not
-// include its issuer, and cert auth then fails.
+// clientTLSConfig returns cert whenever the server requests client auth, ignoring the CA names it
+// advertises. With the plain Certificates field, Go sends no certificate when the advertised names
+// do not include its issuer, and cert auth then fails.
 func clientTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {

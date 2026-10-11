@@ -40,11 +40,10 @@ PKCS#11 close) completes before the process exits.
 
 `newVaultClient` builds one `vault.Client` used by both modes:
 
-- `clientTLSConfig` presents the client certificate from `GetClientCertificate` on every
-  handshake. Using the plain `Certificates` field instead makes Go skip the certificate when the
-  server's advertised CA names do not include the issuer, which breaks cert auth; Vault only
-  advertises names when the listener is configured to verify client certificates. `MinVersion` is
-  TLS 1.2.
+- `clientTLSConfig` supplies the certificate through `GetClientCertificate` when the server requests
+  client authentication. The callback returns it regardless of the advertised CA names; using the
+  plain `Certificates` field instead makes Go skip it when those names do not include the issuer,
+  which breaks cert auth. `MinVersion` is TLS 1.2.
 - `newHTTPClient` clones `http.DefaultTransport` (so `ProxyFromEnvironment`, HTTP/2 and the stdlib
   idle/handshake timeouts are inherited), replaces `DialContext` with a 5-second dialer, sets a
   30-second client timeout, and returns 3xx responses to `vault-client-go`, which follows at most one 301/302/307 redirect and refuses HTTPS-to-non-HTTPS downgrades.
