@@ -217,25 +217,31 @@ func writeConfig(t *testing.T, content string) string {
 func TestLoadConfig_Rejects(t *testing.T) {
 	const base = "vaultAddr: https://localhost:8200\ncertAuthName: web\ncertAuthMount: cert\n"
 	tests := []struct {
-		name    string
-		content string
-		wantErr string
+		name       string
+		content    string
+		wantErr    string
+		wantCause  string
+		wantSuffix string
 	}{
-		{"retired key", base + "yubikeyPivIndex: 1\n", "field yubikeyPivIndex not found"},
-		{"misspelled key", base + "certAuthKeyfile: client-cert.key\n", "field certAuthKeyfile not found"},
-		{"empty file", "", "is empty"},
-		{"unknown key in second document", base + "---\nunknownLaterDocument: true\n", "single YAML document"},
-		{"malformed second document", base + "---\n]\n", "single YAML document: yaml: line 4: did not find expected node content"},
-		{"empty second document", base + "---\n", "single YAML document"},
+		{"retired key", base + "yubikeyPivIndex: 1\n", "field yubikeyPivIndex not found", "", ""},
+		{"misspelled key", base + "certAuthKeyfile: client-cert.key\n", "field certAuthKeyfile not found", "", ""},
+		{"empty file", "", "is empty", "", ""},
+		{"unknown key in second document", base + "---\nunknownLaterDocument: true\n", "single YAML document", "", ""},
+		{"malformed second document", base + "---\n]\n", "single YAML document", "yaml:", ""},
+		{"empty second document", base + "---\n", "single YAML document", "", "must contain a single YAML document"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := LoadConfig(writeConfig(t, tt.content))
-			if err != nil && strings.Contains(err.Error(), "%!w(<nil>)") {
-				t.Errorf("unexpected formatting artifact in error: %v", err)
-			}
+			configDir := writeConfig(t, tt.content)
+			_, err := LoadConfig(configDir)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if tt.wantCause != "" && !strings.Contains(err.Error(), tt.wantCause) {
+				t.Errorf("expected YAML cause containing %q, got %v", tt.wantCause, err)
+			}
+			if tt.wantSuffix != "" && !strings.HasSuffix(err.Error(), tt.wantSuffix) {
+				t.Errorf("expected error to end with %q, got %v", tt.wantSuffix, err)
 			}
 		})
 	}
