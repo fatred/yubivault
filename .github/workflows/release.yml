@@ -29,10 +29,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
+          # Build the shipped binaries from a clean module/build cache. A cache
+          # restored into a release build could have been written by another
+          # workflow run (cache poisoning).
+          cache: false
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -64,6 +70,9 @@ jobs:
       # categories and every PR lands under "Uncategorized".
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only read for the changelog config; the release is created via the API.
+          persist-credentials: false
       - name: Download all artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
