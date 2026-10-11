@@ -59,9 +59,9 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 To keep a PIN out of shell history, and give it only to the yubivault process rather than to every command:
 
 ```shell
-unset TOKEN_PIN pin new_token
+unset pin new_token
 printf 'YubiKey PIN: ' >&2
-read -rs pin
+read -s -r pin
 printf '\n' >&2
 if new_token="$(TOKEN_PIN="$pin" yubivault -yubi)"; then
   export VAULT_TOKEN="$new_token"
@@ -71,6 +71,9 @@ else
   false
 fi
 ```
+
+An existing exported `TOKEN_PIN` is left unchanged; the command-scoped assignment overrides it only
+for yubivault. Unset `TOKEN_PIN` yourself if you want it removed from later child processes.
 
 `TOKEN_PIN` is visible in the environment of the yubivault process (and to other processes of the
 same user while it runs). Prefer the interactive prompt on a shared machine.
