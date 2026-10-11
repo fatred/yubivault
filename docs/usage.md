@@ -94,7 +94,7 @@ Both modes share one HTTP transport:
 | Request timeout | 30 seconds per attempt (HTTP client), and a 30-second cap on the request from the Vault client library |
 | Retries | One, after a 1–1.5 second backoff — two attempts per request. Retried: connection errors and the library's retryable statuses (5xx except 501, 429, 412). |
 | Redirects | `vault-client-go` follows at most one 301, 302 or 307; HTTPS-to-non-HTTPS redirects are refused. |
-| Proxy | Honoured from the environment: `HTTPS_PROXY`/`https_proxy`, `HTTP_PROXY` and `NO_PROXY`/`no_proxy`. |
+| Proxy | Honoured from the environment: `HTTPS_PROXY`/`https_proxy` and `NO_PROXY`/`no_proxy`. `HTTP_PROXY` is ignored because all Vault addresses must use HTTPS. |
 | TLS | Server verified against the system trust store; minimum TLS 1.2. Linux honors `SSL_CERT_FILE`/`SSL_CERT_DIR`. Go 1.27+ macOS release binaries honor them too, using those roots instead of Keychain unless `GODEBUG=x509sslcertoverrideplatform=0`; otherwise add the CA to Keychain. |
 | Client certificate | Presented whenever the server asks, regardless of which CA names it advertises. For `-yubi` the leaf certificate only is sent; make sure the cert-auth role trusts the issuing CA. |
 
