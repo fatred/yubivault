@@ -38,15 +38,6 @@ release binaries are built natively on the matching runner.
 Release downloads have no published checksum or attestation: the release workflow publishes none,
 so the download is trusted on the strength of GitHub and TLS alone.
 
-## Behaviour on `main`
-
-These pages describe `main`. The following behaviours were added after v1.4.2 and may be absent
-from a release binary until included in a later release: `vaultAddr` must be an HTTPS URL,
-`TOKEN_PIN` is trimmed of surrounding whitespace, and empty login or lookup responses and an empty
-token `id` fail with explicit errors (`cert login response not found`,
-`token lookup-self response not found`, `token id is empty`). Check the release notes for the binary
-you are running. Remove this note once these behaviours are included in a release.
-
 ## OpenSC (required for `-yubi`)
 
 `-yubi` loads a PKCS#11 module to reach the card. OpenSC provides it:
