@@ -34,15 +34,15 @@ func TestCreateYubikeyVaultClient_SoftHSM(t *testing.T) {
 
 	module := findSoftHSMModule()
 	if module == "" {
-		t.Skip("SoftHSM module not installed")
+		skipOrFailSoftHSM(t, "SoftHSM module not installed")
 	}
 	softhsmUtil, err := exec.LookPath("softhsm2-util")
 	if err != nil {
-		t.Skip("softhsm2-util not installed")
+		skipOrFailSoftHSM(t, "softhsm2-util not installed")
 	}
 	pkcs11Tool, err := exec.LookPath("pkcs11-tool")
 	if err != nil {
-		t.Skip("pkcs11-tool not installed")
+		skipOrFailSoftHSM(t, "pkcs11-tool not installed")
 	}
 
 	dir := t.TempDir()
@@ -94,6 +94,14 @@ func TestCreateYubikeyVaultClient_SoftHSM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SoftHSM lifecycle child failed: %v\n%s", err, output)
 	}
+}
+
+func skipOrFailSoftHSM(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv("YUBIVAULT_REQUIRE_SOFTHSM") == "1" {
+		t.Fatalf("SoftHSM required by CI but %s", reason)
+	}
+	t.Skip(reason)
 }
 
 func testSoftHSMLoginAndClose(t *testing.T) {

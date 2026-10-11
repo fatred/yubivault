@@ -38,7 +38,10 @@ jobs:
 
       - name: Install SoftHSM integration dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes softhsm2 opensc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends softhsm2 opensc
+          echo "YUBIVAULT_REQUIRE_SOFTHSM=1" >> "$GITHUB_ENV"
 
       - name: Check go.mod/go.sum are tidy
         run: go mod tidy -diff
