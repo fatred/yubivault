@@ -2,8 +2,9 @@
 
 yubivault reads exactly one file: `$HOME/.yubivault/config.yml`. There is no command-line or
 environment override for any config field. The environment still matters: `HOME` locates the file,
-`TOKEN_PIN` supplies the PIN (see [Usage](usage.md)), and the proxy variables and, on Linux,
-`SSL_CERT_FILE`/`SSL_CERT_DIR` affect the network connection.
+`TOKEN_PIN` supplies the PIN (see [Usage](usage.md)), and the proxy variables affect the network
+connection. Go 1.27+ honors `SSL_CERT_FILE`/`SSL_CERT_DIR`; on macOS they replace Keychain trust
+by default unless `GODEBUG=x509sslcertoverrideplatform=0` (see [Usage](usage.md#network-behaviour)).
 
 Create the directory and restrict it to yourself:
 

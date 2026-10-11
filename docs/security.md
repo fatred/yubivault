@@ -87,4 +87,5 @@ boundaries that are deliberate.
   `client_token not found or empty` or `auth field not found in response`. The exact response
   behavior depends on the Vault/OpenBao deployment.
 - No token persistence, caching or renewal; each run is one login.
-- yubivault prints `data.id` from `auth/token/lookup-self`. The equality of that field to the login response's `auth.client_token` was not recorded across Vault/OpenBao deployments; verify the behavior of your server.
+- yubivault sends `auth.client_token` to `auth/token/lookup-self` and prints the response's
+  `data.id`; it does not compare that ID with the login token.
