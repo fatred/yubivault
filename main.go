@@ -407,6 +407,9 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 	if err != nil {
 		return "", err
 	}
+	if resp == nil {
+		return "", fmt.Errorf("cert login response not found")
+	}
 	if resp.Auth == nil {
 		return "", fmt.Errorf("auth field not found in response")
 	}
@@ -421,9 +424,15 @@ func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx conte
 	if err != nil {
 		return "", err
 	}
+	if tokenResp == nil {
+		return "", fmt.Errorf("token lookup-self response not found")
+	}
 	id, ok := tokenResp.Data["id"].(string)
 	if !ok {
 		return "", fmt.Errorf("token id not found or not a string")
+	}
+	if id == "" {
+		return "", fmt.Errorf("token id is empty")
 	}
 	return id, nil
 }
