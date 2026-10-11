@@ -128,8 +128,10 @@ Row 30's old premise ("`unix://` fails safely") is now moot rather than answered
 Remaining audit-completeness limits, stated plainly:
 - Every hardware and live result in this file is scratch evidence with no retained artifact.
 - The successful Vault login was not spy-traced, and the traced run was a failure path.
-- Stale line citations in the review and per-function reports were not refreshed.
-- The DOSSIER and review text have not been edited; where they conflict with §2 (for example `TOKEN_PIN` "verbatim", `http://` accepted, never contacted Vault), this file takes precedence.
+- The review and per-function reports retain historical source-file and line citations from their
+  audit snapshot. The PKI guide cited there as `PKI-SETUP.md` now lives at `docs/pki-setup.md`.
+- The DOSSIER and review include dated evidence addenda. Use those addenda and this status snapshot
+  for current status; original claims explicitly superseded by dated notes remain historical.
 
 ## 7. Next actions
 
