@@ -177,8 +177,15 @@ yubikeyPivSerial: "<serial num from pkcs11-tool>"
 Log in:
 
 ```shell
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
-vault token lookup
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+  vault token lookup
+else
+  unset new_token
+  false
+fi
 ```
 
 `vault token lookup` should show `display_name` `cert-admin`, `policies` including `yubivault-admin`, and your CN as `common_name` under `meta`.

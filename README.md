@@ -6,7 +6,14 @@ OpenSC/PKCS#11 (`-yubi`). The token is the only thing written to stdout, so it c
 directly:
 
 ```shell
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"  # OpenBao: export BAO_TOKEN="$new_token" instead
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 **Documentation: <https://fatred.github.io/yubivault/>**
@@ -71,7 +78,14 @@ go install github.com/fatred/yubivault@latest
 ```shell
 mkdir -p ~/.yubivault && chmod 700 ~/.yubivault
 $EDITOR ~/.yubivault/config.yml     # see Configuration
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 Minimal `~/.yubivault/config.yml` for `-yubi`:

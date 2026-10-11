@@ -36,9 +36,8 @@ All production code is one file, `package main`, in `main.go`.
 
 Preserve these; each is relied on by tests, docs or the shell contract.
 
-1. **stdout carries the token and nothing else.** Prompts, warnings and errors go to stderr
-   (`ReadPin` gets `os.Stderr`; `log` writes to stderr). `VAULT_TOKEN="$(yubivault -yubi)"` depends
-   on it.
+1. **stdout carries the token and nothing else.** Prompts, warnings and errors go to stderr.
+   The documented shell capture depends on it.
 2. **`run` returns nil exactly when one line was written to stdout** (`-version`, or the token).
 3. **Exactly one of `-local`/`-yubi`**; `-version` is handled first and standalone.
 4. **`vaultAddr` is an absolute HTTPS URL.** `LoadConfig` rejects every other scheme before a

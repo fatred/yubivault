@@ -11,7 +11,14 @@ token. The client certificate and key come from one of two places:
 The token is the only thing written to stdout, so it can be captured directly:
 
 ```shell
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"  # OpenBao: export BAO_TOKEN="$new_token" instead
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 The PIN prompt, warnings and errors all go to stderr, which keeps that capture clean.
@@ -55,8 +62,14 @@ mkdir -p ~/.yubivault && chmod 700 ~/.yubivault
 $EDITOR ~/.yubivault/config.yml       # see Configuration
 
 # 3. Log in
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
-yubivault -version
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 For `-yubi` you also need OpenSC. The PKI guide uses PIV slot 9a, but yubivault selects a paired certificate and key exposed by the configured PKCS#11 module. See [PKI setup](pki-setup.md) for that convention.

@@ -122,7 +122,14 @@ Table-driven tests with `t.Run` are the house style. Useful helpers already exis
 Once per behaviour change to the `-yubi` path, on a card you own:
 
 ```shell
-VAULT_TOKEN="$(/tmp/yubivault -yubi)" && export VAULT_TOKEN
+unset new_token
+if new_token="$(/tmp/yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 - Never type or invent a PIN you are not certain of: three wrong attempts block the PIN.

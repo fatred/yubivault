@@ -27,7 +27,14 @@ flag package with `ExitOnError`, so an unknown flag (`-foo`) exits 2 and `-h` ex
 So the token can be captured directly:
 
 ```shell
-VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"  # OpenBao: export BAO_TOKEN="$new_token" instead
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
 yubivault does not export `VAULT_ADDR` or anything else: set that yourself (or in your shell
@@ -52,12 +59,17 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 To keep a PIN out of shell history, and give it only to the yubivault process rather than to every command:
 
 ```shell
-unset TOKEN_PIN
+unset TOKEN_PIN pin new_token
 printf 'YubiKey PIN: ' >&2
 read -rs pin
 printf '\n' >&2
-VAULT_TOKEN="$(TOKEN_PIN="$pin" yubivault -yubi)" && export VAULT_TOKEN
-unset pin
+if new_token="$(TOKEN_PIN="$pin" yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token pin
+else
+  unset new_token pin
+  false
+fi
 ```
 
 `TOKEN_PIN` is visible in the environment of the yubivault process (and to other processes of the
