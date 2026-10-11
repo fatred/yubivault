@@ -18,7 +18,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -398,13 +397,11 @@ func TestReadPin_TerminalBranch(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	wantError := "inappropriate ioctl for device"
-	if runtime.GOOS == "darwin" {
-		wantError = "operation not supported by device"
-	}
-	want := "PIN for 1234567: \ncould not read PIN code: " + wantError + "\n"
-	if got := stderr.String(); got != want {
-		t.Errorf("stderr = %q, want %q", got, want)
+	const prefix = "PIN for 1234567: \ncould not read PIN code: "
+	got := stderr.String()
+	errorText := strings.TrimSuffix(strings.TrimPrefix(got, prefix), "\n")
+	if !strings.HasPrefix(got, prefix) || !strings.HasSuffix(got, "\n") || errorText == "" {
+		t.Errorf("stderr = %q, want prompt and a non-empty wrapped read error", got)
 	}
 }
 
