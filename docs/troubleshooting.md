@@ -10,7 +10,7 @@ Errors go to stderr; the exit status is non-zero on any failure (see
 | `open /home/you/.yubivault/config.yml: no such file or directory` | No config file. | Create `~/.yubivault/config.yml` ([Configuration](configuration.md)). |
 | `<path> is empty` | The file exists but has no content. | Fill it in. |
 | `<path>: yaml: unmarshal errors: … field <name> not found in type main.AppConfig` | Unknown key: a typo, wrong case, or a retired setting (`yubikeyPivIndex`, `yubikeyPivLabel`). The actual error also includes a source line number. | Use one of the documented field names. |
-| `<path> must contain a single YAML document` | A second `---` document in the file. | Delete everything after the first document. |
+| `<path> must contain a single YAML document` | A second `---` document follows the first; if it is malformed, the error is followed by the YAML parse detail. | Delete everything after the first document. |
 | `vaultAddr is required` | Field missing or empty. | Set it. |
 | `vaultAddr must be an absolute HTTPS URL` | Added after v1.4.2. `http://`, `unix://`, another scheme, no scheme (`localhost:8200`), an opaque URI, or no host (`https:///v1`). | Use `https://host[:port]`. |
 | `certAuthName and certAuthMount are required` | One of the two is empty. | Set both. |
