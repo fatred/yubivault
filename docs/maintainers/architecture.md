@@ -29,7 +29,7 @@ main
       │           ├── SetToken(auth.client_token)
       │           ├── GET  /v1/auth/token/lookup-self    (X-Vault-Token)
       │           └── return data["id"]
-      ├── context.Cause check (a signal beats a successful login)
+      ├── context.Cause check (a signal observed here beats a successful login)
       └── fmt.Println(token) ─────────────────────────────► stdout
 ```
 

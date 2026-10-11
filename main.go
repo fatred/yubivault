@@ -510,7 +510,7 @@ func run(args []string) error {
 	}
 	// A pre-cancelled ctx fails the login immediately; the client is still closed.
 	token, err := loginAndClose(ctx, authClient, appConfig)
-	// A signal that raced a successful login still wins: no token, exit 1.
+	// A signal observed at this check beats an otherwise successful login.
 	if cause := context.Cause(ctx); cause != nil {
 		return cause
 	}
