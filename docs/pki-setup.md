@@ -66,8 +66,9 @@ ykman piv keys generate --algorithm ECCP256 --touch-policy CACHED 9a alice.pub
 
 - `ALWAYS` asks for a touch on every use of the key. `CACHED` remembers a touch for 15 seconds.
 - The touch policy is fixed when the key is generated. Changing it later means generating a new key and going through steps 2 to 4 again.
-- Creating the CSR and each yubivault login use the key. With a touch policy set, the YubiKey blinks when one of them needs a touch: always with `ALWAYS`, and with `CACHED` unless the key was touched in the last 15 seconds.
-- yubivault waits up to 10 seconds for the TLS handshake, so touch the key within 10 seconds. If you miss it, yubivault retries once and the key blinks again.
+- Creating the CSR and each yubivault login use the key. With a touch policy set, the YubiKey
+  blinks when the key is used. The exact wait timeout and retry behaviour during login depend on
+  the PKCS#11 stack; touch promptly and do not assume a fixed limit.
 
 Create the CSR. Put your name in `CN` and your team in `OU`. The YubiKey signs the CSR with the slot 9a key, so you are asked for the PIN:
 
