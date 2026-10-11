@@ -93,7 +93,7 @@ PKCS#11 close) completes before the process exits.
 | Key path suppressed in errors | The path comes from config and must not reach logs; the certificate path is not sensitive in the same way and is reported. |
 | One retry, short connect timeout | An unreachable Vault must fail in seconds, not a minute. |
 | Signal handler installed after the PIN read | `term.ReadPassword` should stay interruptible by the default disposition; later, cancellation must not skip closing the card session. |
-| Token read back with `lookup-self` | yubivault prints `data.id` from the authenticated lookup response; equality with the original `auth.client_token` is not established across deployments. |
+| Token read back with `lookup-self` | yubivault sends `auth.client_token` to the lookup endpoint and prints the response's `data.id`; it does not compare that ID with the login token. |
 
 ## Known limits
 
