@@ -107,7 +107,7 @@ export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
 
 - Set `TOKEN_PIN` to skip the PIN prompt in non-interactive use.
 - `HTTPS_PROXY` and `NO_PROXY` are honoured in both modes.
-- If Vault does not answer, yubivault gives up after about 11 seconds: a 5-second connect timeout, tried twice. The error names the address it tried (`dial tcp 10.0.0.1:8200: i/o timeout`).
+- If no connection opens within 5 seconds (to Vault, or to the proxy if one is set), yubivault gives up after about 11 seconds: the connect timeout, tried twice. A refused connection fails in about a second. The error names the address it tried (`dial tcp 10.0.0.1:8200: i/o timeout`).
 - The exit status is non-zero on any failure. On Ctrl-C or SIGTERM during login, yubivault closes the YubiKey session first and then exits 1 (`interrupt signal received` / `terminated signal received`).
 
 ## Credits
