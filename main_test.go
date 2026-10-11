@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -367,7 +368,7 @@ func TestReadPin_Mock(t *testing.T) {
 
 func TestReadPin_TerminalBranch(t *testing.T) {
 	const helperEnv = "YUBIVAULT_READPIN_TERMINAL_HELPER"
-	if os.Getenv(helperEnv) == "1" {
+	if token := os.Getenv(helperEnv); token != "" && os.Args[len(os.Args)-1] == token {
 		_, err := resolvePin(&AppConfig{YubikeySerial: "1234567"}, os.Stdin, os.Stderr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -382,8 +383,9 @@ func TestReadPin_TerminalBranch(t *testing.T) {
 	}
 	defer stdin.Close()
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestReadPin_TerminalBranch$")
-	cmd.Env = append(os.Environ(), helperEnv+"=1", "TOKEN_PIN=")
+	helperToken := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	cmd := exec.Command(os.Args[0], "-test.run=^TestReadPin_TerminalBranch$", helperToken)
+	cmd.Env = append(os.Environ(), helperEnv+"="+helperToken, "TOKEN_PIN=")
 	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -396,7 +398,12 @@ func TestReadPin_TerminalBranch(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	if got, want := stderr.String(), "PIN for 1234567: \ncould not read PIN code: inappropriate ioctl for device\n"; got != want {
+	wantError := "inappropriate ioctl for device"
+	if runtime.GOOS == "darwin" {
+		wantError = "operation not supported by device"
+	}
+	want := "PIN for 1234567: \ncould not read PIN code: " + wantError + "\n"
+	if got := stderr.String(); got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
 }
