@@ -121,8 +121,10 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	// KnownFields only applies to documents that are decoded, so a second
 	// `---` document would escape the unknown-key check: allow exactly one.
 	var extra yaml.Node
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if err := decoder.Decode(&extra); err == nil {
 		return nil, fmt.Errorf("%s must contain a single YAML document", path)
+	} else if !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s must contain a single YAML document: %w", path, err)
 	}
 	// TLS is required for certificate authentication; accept only absolute
 	// HTTPS URLs.
