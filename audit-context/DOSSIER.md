@@ -1,0 +1,209 @@
+# Dossier: yubivault structural audit context
+
+## Scope and coverage
+
+**Sources.** This dossier is synthesized from the supplied orientation and 12 function records only; no working-directory file, test or hardware was re-inspected while writing it. Every line citation, dependency-source citation and reported test observation below is taken verbatim from that input. Records cite Go toolchain go1.27.2 and these dependency revisions: `crypto11` v1.6.8 (with indirect `miekg/pkcs11` v1.1.2), `vault-client-go` v0.4.3, `go-retryablehttp` v0.7.8, `x/term` v0.47.0, and `go.yaml.in/yaml/v3` v3.0.5 (`go.mod:9`).
+
+**Functions with a prose record (12).** `run`, `CreateYubikeyVaultClient`, `readPrivateKey`, `LoadConfig`, `AuthenticateAndGetToken`, `CreateLocalVaultClient`, `selectCertificate`, `resolvePin`, `ReadPin`, `newHTTPClient`, `clientTLSConfig`, `newVaultClient` — all in `main.go`.
+
+**Coverage limitation.** The orientation describes 20 units; the records cover the top 12. Not analyzed as standalone candidates: `loginAndClose` (main.go), `YubikeyVaultClient.Close` (main.go), `requireForMode` (main.go), `pathErrCause` (main.go), `main` (main.go), `build-release job` (`/.github/workflows/release.yml`), `build-and-test job` (`/.github/workflows/ci.yml`). `certCNs` was examined as a helper in the `selectCertificate` analysis, but was not separately ranked/analyzed. Statements about the remaining units rest on other records' descriptions, not dedicated function analyses.
+
+**Verification reported by the function analyses.** Individual analyses report source-level checks and some tests or scratch experiments (for example, a retry test measured at 1.13s, and a path-join behaviour reproduction). These are the analyses' reports and were not independently rerun for this dossier. No live Vault/OpenBao or hardware run is reported. `[INFERENCE]` and unclear items remain identified as such below.
+
+## Modules
+
+| Module | Path | Role (orientation) |
+|---|---|---|
+| cli | `/home/jhow/git/yubivault/main.go` | Entire program: flag parsing and mode dispatch, `~/.yubivault/config.yml` loading, private-key permission gate, PKCS#11/YubiKey and file-based TLS client cert sources, Vault client construction (TLS/transport/timeouts/retries), cert-login + token lookup, token printed to stdout, signal-aware cleanup |
+| tests | `/home/jhow/git/yubivault/main_test.go` | Unit tests with fake `VaultClient`/clients and `httptest` TLS servers; assert config validation, key-permission refusal, path non-leakage in errors, cert selection, PIN resolution, client-close-on-failure, proxy env use, cert presentation, single retry |
+| docs | `/home/jhow/git/yubivault/README.md`, `/home/jhow/git/yubivault/PKI-SETUP.md` | Operator documentation: install, `config.yml` fields, usage flags, `TOKEN_PIN`, proxy and timeout behaviour, exit status; PKI-SETUP is the end-to-end CA/YubiKey/Vault cert-auth recipe |
+| ci | `/.github/workflows/ci.yml`, `/.github/workflows/release.yml` | ci.yml: `go mod tidy -diff`, gofmt, `go vet`, `go test -race`, govulncheck on linux+macos. release.yml: native cgo builds on tag push with `-X main.Version`, artifact upload, GitHub release |
+| deps | `/home/jhow/git/yubivault/go.mod` | Direct: crypto11 (PKCS#11), vault-client-go, yaml.v3, x/term; indirect miekg/pkcs11 (cgo), go-rootcerts, go-retryablehttp; govulncheck pinned as tool |
+
+Structure facts from the records: all production code is one `package main` file; there is exactly one other Go file (`main_test.go`); configuration is YAML; cgo is pulled in via `miekg/pkcs11`. `main_test.go` contains `MockVaultClient` (`main_test.go:17-36`) and `closeRecorder` (`main_test.go:440-470`), and tests only the callees — no test calls `run` (record states a grep for `run(` matches only `main.go:424`).
+
+## Actors and trust
+
+- **Local operator / invoking user** — trusted; owns the home directory, writes `config.yml` and the `-local` key material, supplies flags, stdin PIN and environment.
+- **Other local processes/users on the host** — untrusted for key confidentiality; the code assumes `~/.yubivault` and the key file may be readable/writable by them, hence the `0o077` mode check (`main.go:193-195`) and path-free error strings (`keyFileField` `main.go:176-178`, `pathErrCause` `main.go:203-211`).
+- **Vault / OpenBao at `vaultAddr`** — remote, server-authenticated only via the system trust store (`clientTLSConfig` sets no custom `RootCAs`/`Certificates`, `main.go:349-356`); its responses (`Auth.ClientToken`, `Data["id"]`) are parsed and the latter printed.
+- **YubiKey PIV applet + OpenSC PKCS#11 module (`openscPath`)** — trusted local hardware/library, loaded as a native module into the process and given the PIN; supplies the paired cert/private key.
+- **Environment variables (`TOKEN_PIN`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `HOME`)** — caller/session controlled; `TOKEN_PIN` carries the PIN and is consumed without prompting (`main.go:259-261`); proxy vars redirect network egress.
+- **Shell/consumer reading stdout** — trusted by design; stdout carries only the token, intended for `VAULT_TOKEN=$(yubivault -yubi)`.
+- **GitHub Actions runners and pinned actions / tag pusher** — semi-trusted supply chain; actions SHA-pinned and caches disabled for release builds, but whoever can push a `v*.*.*` tag drives the published artifacts.
+
+## Entrypoints
+
+Program entrypoints, with reaching condition (orientation, refined by records):
+
+- `main` (`main.go`) — any local user or script running the binary; receives `os.Args[1:]`, inherits environment; sole exit sink is `log.Fatal` at `main.go:425`.
+- `run` (`main.go:432-503`) — from `main` (call at `main.go:424`) and as the unit-test entry into program logic; only non-`-version` path.
+- `LoadConfig` (`main.go:102-137`) — from `run` at `main.go:452`; reads `<homeDir>/.yubivault/config.yml`.
+- `ReadPin` (`main.go:378-395`, exported) — from `resolvePin` at `main.go:262`; reads `os.Stdin` (terminal path) or any `io.Reader`.
+- `resolvePin` (`main.go:258-271`) — from `run` at `main.go:464` when `-yubi`; consults `TOKEN_PIN` first.
+- `CreateLocalVaultClient` (`main.go:155-174`) — from `run` at `main.go:480` when `-local`.
+- `readPrivateKey` (`main.go:183-201`) — from `CreateLocalVaultClient` at `main.go:157`.
+- `CreateYubikeyVaultClient` (`main.go:273-313`) — from `run` at `main.go:484` when `-yubi`.
+- `newVaultClient` (`main.go:326-343`) — from `CreateLocalVaultClient` (`main.go:169`) and `CreateYubikeyVaultClient` (`main.go:306`).
+- `newHTTPClient` (`main.go:363-374`), `clientTLSConfig` (`main.go:349-356`) — from `newVaultClient` (`main.go:329`).
+- `AuthenticateAndGetToken` (`main.go:397-421`) — from `run` via `loginAndClose` (`main.go:493`, `513`).
+- `loginAndClose` (main.go) — from `run`; **no record**.
+- `build-and-test job` (ci.yml) — GitHub push to main, any PR, monthly schedule cron.
+- `build-release job` (release.yml) — push of a `v*.*.*` tag; builds and uploads shipped binaries.
+
+Flag handling structure: exactly three bool flags registered at `main.go:433-437` with `flag.ExitOnError`; parse failures terminate the process inside `fs.Parse` (`flag.go:1164-1174` — `os.Exit(0)` for `ErrHelp`, else `os.Exit(2)`) and never reach `run`'s error path; positional arguments are never read (`fs.Args()` unused).
+
+## Shared state and cross-function invariants
+
+**Config object and directory constant.** `<homeDir>/.yubivault/config.yml` is the only external state `LoadConfig` reads (`main.go:103`); nine string fields with lowerCamelCase yaml tags (`main.go:31-39`); decode with `KnownFields(true)` (`main.go:112`) and a second-`Decode`-must-be-`io.EOF` single-document rule (`main.go:120-125`); required fields `vaultAddr` then `certAuthName`+`certAuthMount` (`main.go:130-135`); mode-specific fields deferred to `requireForMode` (`main.go:142-153`, called at `main.go:456`). The returned `*AppConfig` is read-only downstream (field reads enumerated at `main.go:130,133,157,161,169,262,278-279,301,306,398,452,456,480,502`; original record's list also cites `main.go:502` as a read use). `const configDirName = ".yubivault"` (`main.go:100`) is shared by `LoadConfig` (`main.go:103`) and both `filepath.Join` calls in `CreateLocalVaultClient` (`main.go:157`, `161`).
+
+**Error-text policy and its asymmetry.** Key-file errors never contain the key path: `keyFileField` (`main.go:176-178`) is substituted at `main.go:186,191,194,198`, and `pathErrCause` (`main.go:203-211`) reduces `*fs.PathError` to its cause while `%w` preserves the chain. By contrast the certificate read error includes the fully resolved path (`main.go:163`), and `LoadConfig`'s error texts include the config path (`main.go:116,118,124`) — the records describe the path-free rule as scoped to the private key.
+
+**Key-file gate is applied to the file actually read.** `os.Open` (`main.go:184`) → `f.Stat` (`main.go:189`, fd-based) → `perm&0o077` rejection (`main.go:193-195`, returns before any content byte) → `io.ReadAll(f)` (`main.go:196`) all act on one `*os.File`; only the low 9 permission bits are consulted; the deferred `f.Close()` error is discarded (`main.go:188`).
+
+**One TLS certificate, presented unconditionally.** `clientTLSConfig` captures `cert` by value and returns `&cert, nil` from `GetClientCertificate`, ignoring the `*tls.CertificateRequestInfo` (`main.go:351-352`); `MinVersion: TLS12` (`main.go:354`); no `RootCAs`/`ServerName`/`InsecureSkipVerify`/`Certificates`. `newVaultClient` passes `vault.WithHTTPClient(newHTTPClient(clientTLSConfig(cert)))` (`main.go:327-330`); `newHTTPClient` assigns `transport.TLSClientConfig = tlsConfig` (`main.go:366`) by pointer, and net/http writes `NextProtos` into that config on first use (record's stdlib citations), so the config is post-return mutable shared state. `selectCertificate` returns the input element by value, so the returned `Leaf` pointer, `PrivateKey` and `Certificate` slice header alias the caller's slice element (`main.go:223`, `235`); `crypto11` builds `Leaf`/`Certificate[0]` from the same `*x509.Certificate` and one-element chain. No cleanup or wiping of key bytes exists on any path (record: `keyPEM` passed to `tls.X509KeyPair` at `main.go:165`, never overwritten; `LocalVaultClient.Close` is a no-op at `main.go:57-59`).
+
+**PKCS#11/crypto11 context lifetime and single close.** Created by `crypto11.Configure` inside `CreateYubikeyVaultClient` (`main.go:277`); on any post-Configure error the deferred guard `if err != nil && cryptoCtx != nil` closes it (`main.go:289-293`); on success ownership transfers through the unexported `YubikeyVaultClient.cryptoCtx` (`main.go:62-66`) and is ended by `YubikeyVaultClient.Close` (`main.go:72-77`), reached only through `loginAndClose`'s defer (`main.go:508-512`) after login. `crypto11.Context.Close` must not be called twice — a second call panics on the module registry lookup (record cites `crypto11.go:355-370`); the context outlives the whole authentication attempt (constructor `main.go:484` → `loginAndClose` `main.go:493`). The card signer is valid only while that context lives: the private key holds the `*Context` and each signing call checks out a pooled session (record cites `keys.go:161-172`, `rsa.go:458`, `ecdsa.go:250`, `sessions.go:46-72`).
+
+**Vault client token state.** `RealVaultClient.SetToken` (`main.go:92-94`) writes the client-level `headers.token` modifier under a lock; it is written in `AuthenticateAndGetToken` at `main.go:409` and used next by `TokenLookUpSelf` (`main.go:412`); `ClearToken` is never called in the repo. `loginAndClose` wraps the same underlying client (`main.go:513`) that `run` holds, and its deferred `Close` runs on both success and failure (`main.go:508-512`).
+
+**Auth-mode and output invariants.** Exactly one of `-local`/`-yubi` is accepted (`main.go:444-446`, after the `-version` return at `main.go:439-442`). `run` returns a nil error exactly when it has written one stdout line (`main.go:439-442` version, `501-502` token; every other exit is an error return at `main.go:445,450,454,457,465-466,488-489,490,496-497,499`). The printed value is `tokenResp.Data["id"]` from `TokenLookUpSelf`, not the login response's `Auth.ClientToken` (`main.go:405,409,412,416-420,493,501`). `context.Cause` takes precedence over the login error on the same path (`main.go:494-497` before `498-500` and the print at `501`; same precedence at `487-489`). Both constructors return literal `nil` together with every error (`main.go:159,163,167,171`; `283,299,303,308`), so `authClient` is non-nil wherever `run` passes it on (`486-491` before `493`). All `AuthenticateAndGetToken` failures return `""` with the error (`main.go:400,403,407,410,414,418`) and no local error interpolates server data.
+
+**Pin non-emptiness.** `resolvePin` never returns `("", nil)`: the env branch returns only a non-empty value (`main.go:259-261`) and the prompt branch rejects trimmed-empty (`main.go:266-269`). The env value is returned untrimmed; the prompt value is trimmed twice (`ReadPin` `main.go:386/394`, then `main.go:266`). Downstream, `crypto11.Config.Pin` is therefore non-empty (`main.go:280`), so the `pkcs11` zero-length-PIN→NULL branch (record's `pkcs11.go:258-266`) is unreachable from `resolvePin`.
+
+**Timeouts and retry numbers.** `dialTimeout = 5s` and `requestTimeout = 30s` (`main.go:319-320`) are package constants shared by `newVaultClient` and `newHTTPClient`; `RetryMax: 1` with `RetryWaitMin: 1s`, `RetryWaitMax: 1500ms` (`main.go:333-337`) means two attempts per request; the 30s library context budget wraps retries and backoff sleeps (`client_requests.go:170-176`, record citation) while `http.Client.Timeout: 30s` (`main.go:369`) is per attempt.
+
+**Signal state.** `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)` (`main.go:474`) plus `context.AfterFunc(ctx, stop)` (`main.go:476`) with `defer stop` (`main.go:475`); the handler is registered only after the PIN read (`main.go:462-467` precedes `474-476`), so SIGINT/SIGTERM keep their default disposition during the prompt (comment at `main.go:460-461`); once `ctx` is done, the default action is restored and the cause string is `<name> signal received` (record's os/signal citations).
+
+**Cross-function workflow state (orientation `state`).** config.yml (written by the operator, read by `LoadConfig`); `-local` cert/key PEM files (key mode must be `0o600` or stricter); the Vault token held in memory in the `vault.Client` and never persisted; the printed token → shell `VAULT_TOKEN`/`BAO_TOKEN`; the PKCS#11 session created by `CreateYubikeyVaultClient` and closed by error defer or `Close()`; CI/release artifacts with `Version` injected via ldflags.
+
+## Workflows
+
+1. **Startup.** `main` (`main.go:423-427`) → `run(os.Args[1:])` (`main.go:432`) → flags parsed, process exits inside `Parse` on error (`main.go:433-437`) → `-version` prints `Version` and returns (`439-442`) → mode exclusivity check (`444-446`) → `os.UserHomeDir` (`448`) → `LoadConfig` (`452`) → `requireForMode` (`456`) → mode branch.
+2. **`-local` construction.** `CreateLocalVaultClient` (`main.go:480`) → `readPrivateKey` first so a group/other-readable key fails closed even when the cert is missing (`main.go:156-157`) → `os.ReadFile` cert with no mode check (`main.go:161`) → `tls.X509KeyPair` (`main.go:165`, leaf = first CERTIFICATE block, key/cert match enforced) → `newVaultClient` (`main.go:169`).
+3. **`-yubi` construction.** `resolvePin(appConfig, os.Stdin, os.Stderr)` (`main.go:464`) → `CreateYubikeyVaultClient` (`main.go:484`) → `crypto11.Configure{Path, TokenSerial: YubikeyPivSerial, Pin}` (single token selector, login during construction) (`main.go:277-281`) → `FindAllPairedCertificates` (`main.go:297`) → `selectCertificate` (`main.go:301`) → `newVaultClient` (`main.go:306`); error paths close the crypto11 context (`main.go:289-293`).
+4. **Client construction.** `newVaultClient` (`main.go:326-343`) → `vault.New` with `WithAddress`/`WithHTTPClient`/`WithRequestTimeout`/`WithRetryConfiguration` → `newHTTPClient` (cloned `DefaultTransport`, 5s dialer, TLS config, 30s client timeout, `ErrUseLastResponse` redirects) → `clientTLSConfig`. Construction performs no network I/O and opens no fd; the returned client has no token yet.
+5. **Authentication and output.** `loginAndClose` (`main.go:493`, `507-514`) → `AuthenticateAndGetToken` → `CertLogin` (`POST /v1/auth/{cert_mount_path}/login`, `main.go:398`) → `Auth == nil` check, empty `client_token` check (`402-411`) → `SetToken` (`409`) → `TokenLookUpSelf` (`412`) → `Data["id"]` comma-ok assertion (`416-420`) → returned and printed once (`498`/`501`); the client is closed by `loginAndClose`'s defer on both outcomes.
+6. **Failure and signal path.** After construction, `context.Cause(ctx)` is checked twice (`487-489`, `495-497`) before the print; a signal-caused failure is returned to `main` and exits 1 via `log.Fatal` (`425`) with `interrupt signal received` / `terminated signal received` documented in README. A cancelled context suppresses token output even when login succeeded.
+7. **Retry/timeout behaviour.** Per request: 30s library context + 30s `Client.Timeout`; per attempt a 5s dial budget shared by DNS + all addresses; one retry after a 1–1.5s linear-jitter backoff; retry policy is the library default (5xx except 501, 429, 412, transport errors; never when the context is done). A 3xx is returned to the library (`ErrUseLastResponse`), which allows at most one redirect hop and refuses an https→non-https hop.
+8. **Version/release.** `-version` prints `main.Version` (`main.go:28`, default `"dev"`; `440`), overridden at link time by release.yml's `-X 'main.Version=$VERSION'` with `VERSION = github.ref_name`.
+9. **CI.** ci.yml (push to main, PRs, monthly cron) runs `go mod tidy -diff`, gofmt, `go vet`, `go test -race`, govulncheck on linux+macos; release.yml builds cgo binaries natively on tag push and creates the release.
+
+## Trust boundaries
+
+- **Invoker → process.** argv/flags/stdin/env cross here: flags via `ExitOnError` (process exit inside `Parse`); stdin via `ReadPin`, which on the terminal path reads fd 0 directly (`syscall.Stdin`, `main.go:381`) regardless of the passed `r`; `TOKEN_PIN` is consumed without validation and returned verbatim when non-empty (`main.go:259-261`), while the prompt path trims (`main.go:266`).
+- **Operator filesystem → process.** `config.yml` is parsed with unknown-key rejection and single-document enforcement but carries no permission or ownership check, and the containing directory's mode is documented (`README.md:51`, `chmod 700`) but not verified by `LoadConfig` or `readPrivateKey`. The key file is gated on `perm&0o077` of the fstat'd descriptor, with the cert file read directly (`main.go:161`, no mode check). Both names pass through `filepath.Join` with no containment check: absolute components are re-rooted under `.yubivault` and `..` segments resolve lexically out of it (reproduced on go1.27.2 in the record); `os.Open` adds no `O_NOFOLLOW`, and no `IsRegular`/size/owner check exists.
+- **Process → Vault.** Server authentication is the system trust store only (no `RootCAs`/`ServerName`/`InsecureSkipVerify`; `SSL_CERT_FILE`/`SSL_CERT_DIR` honoured by Go's pool). The client certificate is presented for every handshake that asks, ignoring advertised CA names (`main.go:351-352`); chain = leaf only. `vaultAddr`'s scheme is deliberately unenforced (`main.go:126-129`), and an `unix://` address would make the library replace `DialContext` (record cites `client.go:98-116`). Server responses are parsed at `main.go:402-405` and `416-418`.
+- **Process → YubiKey/PKCS#11.** A config-supplied module is dlopened and initialized, the token is selected by serial, and the PIN goes to one `C_Login` on the persistent session; pairing is by `CKA_ID` only with no cryptographic key/certificate match check (`main.go:295-296`, `certificates.go`/`keys.go` citations); CN comparison is byte-exact against `Subject.CommonName` (`main.go:227-232`). Errors from these paths are re-wrapped with fixed prefixes (`main.go:283`, `299`).
+- **Process → network egress.** `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` come from the cloned `DefaultTransport`'s `Proxy` func, snapshotted once per process (record's `transport.go` citations; the test documents this), and apply to both plain and retrying paths.
+- **stdout → shell.** stdout carries only the token (`main.go:440`, `501`); the PIN prompt and all diagnostics go to stderr (`main.go:379` with `os.Stderr` from `main.go:464`; close error `main.go:510`; `log.Fatal` `main.go:425`), preserving the documented `VAULT_TOKEN=$(yubivault -yubi)` contract.
+- **Repo → CI/release.** Actions SHA-pinned, caches disabled for release builds, and `Version` injected via ldflags; the tag pusher influences published artifacts.
+
+## Complexity clusters
+
+- **crypto11/PKCS#11 lifecycle.** Refcounted module registry (`moduleReferences`), session pool, signer-after-close behaviour, `Close` non-idempotence, and `CKA_ID`-only pairing. Highest external-source depth and the only cluster with a real-device dependency (`OpenSC` + PIV applet); all four records touching it flag unresolved behaviour (see Open questions).
+- **vault-client-go request layering.** Options → configuration → plain client + retryablehttp client → per-request context deadline → redirect loop → error decoding. Black-box server semantics (auth vs `wrap_info`, MFA, empty-body 2xx) live at this boundary and are not excluded by the library.
+- **net/http transport configuration.** `DefaultTransport.Clone()` inheritance (proxy, `ForceAttemptHTTP2`, idle/handshake/expect-continue values), replaced dialer, wholesale `TLSClientConfig` assignment, post-return mutation of that config, `ResponseHeaderTimeout` left unset, `MaxIdleConnsPerHost` left at the stdlib default rather than the library's cleanhttp value, and the `ErrUseLastResponse` sentinel interacting with the library's own redirect handling.
+- **YAML decode rules.** `KnownFields` + single-document rule + `io.EOF`→`is empty` mapping, verified against the pinned library version; the second-document probe decodes into `yaml.Node`, so unknown keys there bypass `KnownFields` and the underlying parse error is dropped (`main.go:123-124`).
+- **Error-text composition.** Path-free vs path-bearing policy split across `readPrivateKey`/`pathErrCause`, the cert read, and `LoadConfig`; `%w` chains vs bare `fmt.Errorf` (no `%w` in `selectCertificate`'s four errors) across five records.
+- **Signal/context ordering.** `NotifyContext` + `AfterFunc` + `Cause` precedence + the deliberate delay of handler installation until after the PIN prompt; interactions with library request cancellation are unresolved.
+- **Flag/parse boundary.** `ExitOnError` inside `Parse` means pre-`run` terminations are outside all error plumbing.
+
+## Unenforced assumptions
+
+The supplied records contain **no** assumption whose `establishedBy` is the literal marker `nothing found`. Several assumptions do carry variants of that idea — "Not established in this repo" (e.g. card-supplied pairing, server-side one-certificate chain acceptance), "Not enforced by this function" (nil response with nil error), and "server side is a black box / not verified from source in this repo" (login-response token location, lookup-self `data.id`) — in the `CreateYubikeyVaultClient` and `AuthenticateAndGetToken` records. Under the stated inclusion rule ("only assumptions whose `establishedBy` is explicitly `nothing found`"), this section lists none, and the variants above are therefore not itemised here.
+
+## Open questions
+
+Carried forward from the records, grouped by the record that raised them.
+
+**run (`main.go:432-503`)**
+- Does `vault-client-go`'s `CertLogin` return the context cancellation error (rather than a transport error) when `ctx` is cancelled mid-request? Determines which branch of `main.go:495-499` wins on a racing signal — unclear; needs the library request path.
+- Is the token-lookup `id` guaranteed to equal `Auth.ClientToken` for cert-login tokens on Vault/OpenBao? Unclear; needs Vault documentation.
+- How does `x/term.ReadPassword` behave when `os.Stdin` is not a terminal? The non-tty branch at `main.go:388-394` is unreachable from `run` — unclear; needs the x/term source.
+- Is exit status 1 (via `log.Fatal`, `main.go:425`) intended for a signal-caused failure versus the conventional 130/143? No test asserts it; README says only "non-zero".
+- Is a second SIGINT arriving between the first cancellation and `AfterFunc`'s goroutine guaranteed to be absorbed in all cases (comment `main.go:471-473`)? Unverified by any test, since no test invokes `run`.
+
+**CreateYubikeyVaultClient (`main.go:273-313`)**
+- Do any crypto11 error strings on the failure paths reachable from `Configure` or `FindAllPairedCertificates` include the PIN, the module path, or token content? Unclear; needs each error construction with real hardware output.
+- Is `Context.Close` (`C_Finalize`/`C_Destroy`) safe against this OpenSC build and PIV applet after a logged-in session? Unclear; needs an end-to-end `-yubi` run on the real card.
+- Can `moduleReferences` refCount ever exceed 1 in this binary (making `Close` decrement rather than finalize)? Unclear; the repo has only one `Configure` call site (`main.go:277`).
+- Which PIV slots the module enumerates for `CKO_PRIVATE_KEY` (hence which pairs can be returned) depends on module configuration outside this repo — unclear; needs the module's PIV object filtering.
+- Does the Vault server for `vaultAddr` accept a one-certificate client chain (leaf only)? Unclear; needs the server-side cert-auth role/CA configuration.
+- Is `Close` reachable twice for one context via any path (`loginAndClose` plus the error defer)? Structure says no (`main.go:289-293` and `508-512` are mutually exclusive by `err`), but no test exercises the success path's close against a real context — unclear; needs a card-backed test.
+
+**readPrivateKey (`main.go:183-201`)**
+- Ownership (`Stat_t.Uid`) is not inspected; whether an owner requirement is intended is unclear — needs `README.md:80`/PKI-SETUP for a stated owner policy.
+- Whether a symlink as the final path component is in scope for the "file checked equals file read" property is unclear (`os.Open` adds no `O_NOFOLLOW`) — needs repo docs or history for a stated intent.
+- Behaviour on non-regular files (FIFO, device, socket) is unrestricted — unclear whether intended; needs a regular-file requirement in README.
+- `~/.yubivault`'s permissions are documented (`README.md:51`) but not enforced here or in `LoadConfig` — unclear whether enforcement is intended elsewhere; needs the tests around `LoadConfig`.
+- Whether the returned key bytes are retained or zeroed after `tls.X509KeyPair` is unclear; `readPrivateKey` keeps no reference after returning — needs `crypto/tls` and its callers.
+- Whether an error from `tls.X509KeyPair` (`main.go:166`) can embed key material before reaching `log.Fatal` is unclear — needs the `crypto/tls` source.
+- All stdlib citations were read from the installed toolchain (go1.27.2); other Go versions are not covered.
+
+**LoadConfig (`main.go:102-137`)**
+- Does a config read while another process truncates/replaces it yield a partial-parse error, an `io.EOF` treated as `is empty`, or a silently short decode? Unclear; the decoder streams from the fd with no `Stat`/lock and no test exercises concurrent modification.
+- Whether any consumer depends on `LoadConfig` accepting a `...` document-end marker is unclear (no in-repo test; behaviour only reproduced against the pinned library version).
+- Whether a BOM-prefixed `config.yml` is intended to be supported is unclear (undocumented and untested; parser tolerance observed only in a scratch run).
+- The second-document branch intentionally discards the underlying yaml parse error (`main.go:123-124`); whether that loss is intended is not stated anywhere — unclear; needs git history/comments.
+
+**AuthenticateAndGetToken (`main.go:397-421`)**
+- Can a Vault/OpenBao cert-login or lookup-self return 200 with an empty body? If so `resp` (`main.go:402`) or `tokenResp` (`main.go:416`) is nil with a nil error — not excluded by vault-client-go v0.4.3; needs server behaviour or the library's response tests.
+- Is the `client_token not found or empty` branch (`main.go:407`) the branch an MFA-gated cert login takes? `resp.Auth.MFARequirement` is never read and no test covers that shape — unclear; needs Vault/OpenBao source.
+- Does lookup-self always return a JSON string at `data["id"]` for the token issued here, or can it be redacted, absent or non-string (decoder uses `json.Number`)? Unclear; needs the token store source or a recorded real response.
+- Can a deployment force a wrapped cert-login response (`wrap_info` present, `auth` absent), mapping onto `auth field not found in response`? Unclear; needs server-side wrapping behaviour.
+- Is the `SetToken` non-printable rejection reachable from a server-supplied `client_token` containing control characters? No test assigns `MockVaultClient.SetTokenErr` (`main_test.go:33`, `41-43`) — unclear; needs a fixture or a Vault source check on the token character set.
+- Does the pair (login `client_token`, lookup `id`) ever differ in a real deployment, and which should the caller's shell hold? The function deliberately returns the lookup value; the test fixture uses different strings for the two (`main_test.go:50-56`) — unclear; needs how Vault generates the value returned by lookup-self.
+
+**CreateLocalVaultClient (`main.go:155-174`)**
+- Is `CertAuthKeyFile`/`CertAuthPemFile` intended to be confined to `~/.yubivault`? Docs show plain names, but no containment rule, statement or check exists and `filepath.Join` resolves `..` out of the directory (reproduced) — unclear; needs issue/PR history.
+- Is the certificate file's path-in-error behaviour (`main.go:163`) intended, given the deliberate path suppression for the key? No comment or test covers the cert error text — unclear; needs the CodeQL configuration and any CI rule motivating the key policy.
+- Is `-local` with a `unix://` `vaultAddr` intended? The 5s dialer installed at `main.go:365` would be replaced by the library's unix branch, and no doc mentions unix sockets — unclear.
+- Should the key file's ownership (uid) or type be checked? Only mode bits are tested and README documents only the group/other rule — unclear; needs the intended operator model on shared hosts.
+- Is client-side certificate validity/chain checking expected before the handshake? `tls.X509KeyPair` performs none and the first handshake is in `AuthenticateAndGetToken` — unclear; needs PKI-SETUP and the server-side cert-auth configuration.
+- Does anything depend on `CreateLocalVaultClient` returning before proxies or CA bundles are resolved? The clone's `Proxy` func means `HTTPS_PROXY`/`NO_PROXY` and `SSL_CERT_FILE`/`SSL_CERT_DIR` are read later, per request — unclear; needs any test or doc assuming construction-time resolution.
+
+**selectCertificate (`main.go:217-241`, helper `certCNs` `main.go:243-254`)**
+- Does `miekg/pkcs11` v1.1.2 `GetAttributeValue` return nil or an empty non-nil slice for a zero-length `CKA_ID`? That decides whether the certificate lookup errors with "id, label and serial cannot all be nil" (swallowed at `keys.go:176`) or searches with `CKA_ID ""` — unclear; needs the attribute conversion code.
+- Does the OpenSC PIV module always expose a `CKO_PUBLIC_KEY` object per slot? That decides whether `pub` comes from the certificate and whether `errNoPublicHalf` can silently drop a slot — unclear; needs OpenSC sources.
+- Can the OpenSC PIV mapping report a key type outside `CKK_DSA`/`CKK_RSA`/`CKK_ECDSA`? Only those three are handled and the error aborts the whole enumeration before `selectCertificate` runs — unclear; needs the OpenSC key-type mapping.
+- Can a real YubiKey configuration surface two pairs with the same `Subject.CommonName`? The code path and a unit test exist; no runtime observation was made — unclear.
+- Is authorization by CN or by OU? PKI-SETUP.md:137 states `allowed_organizational_units` while PKI-SETUP.md:138 states the CN appears as `common_name` in token metadata and the audit log — outside this function; unclear; needs the Vault cert role configuration.
+- Can Vault's cert-login response path distinguish "wrong certificate presented" from other TLS/handshake failures? Only the selection side was inspected — unclear.
+
+**resolvePin (`main.go:256-271`)**
+- Does anything else loaded into the process read `TOKEN_PIN` — in particular the PKCS#11 module named by `appConfig.OpenScPath`? Unclear; needs the OpenSC module or its source, neither in this repo.
+- How does OpenSC's PIV module treat a PIN containing spaces, newlines or NUL bytes, given the env path forwards the raw value (`main.go:260`) — unclear; needs OpenSC's `C_Login`/`ykcs11` implementation.
+- Can a Linux tty read after a pty hangup or Ctrl-D make `readPasswordLine`'s retry loop repeat without blocking? Unclear; needs a pty-level experiment.
+- Do the PKCS#11 pool sessions ever log in again with the same `Pin` (spending further retry-counter attempts)? Unclear; needs the pool code beyond the two `Ctx.Login` sites.
+
+**ReadPin (`main.go:376-395`)**
+- What `n` can a hostile or non-conforming `io.Reader` return at `main.go:389` relative to `len(bPin) = 64`? `bPin[:n]` at `main.go:394` is unguarded — unclear.
+- Can `read(2)` return `(0, nil)` on a tty hangup or Ctrl-D? `passwordReader.Read` passes it through and `readPasswordLine` continues the loop when `n == 0 && err == nil`, so termination on that input is not established by source — unclear.
+- Why 64 bytes was chosen for the generic path (`main.go:388`)? No comment or constant explains it, and the terminal path has no equivalent cap.
+- Whether any deployment passes a non-terminal `io.Reader` in production is unclear: the function is exported but the only in-repo callers are `resolvePin` and tests.
+- Is the newline written after a failed read (`main.go:382`/`390`, before the error check) intended? Not stated in the doc comment at `main.go:376-377`.
+- Can a second `ReadPin` call occur in the same process after termios restore, and can an early return precede the deferred restore? Source says it cannot (defer inside x/term); runtime behaviour on EINTR is not verified here.
+
+**newHTTPClient (`main.go:358-374`)**
+- Does an `HTTPS_PROXY` tunnel in this environment negotiate ALPN h2 through this transport? The repo's own proxy test refuses the tunnel, so that path was not exercised — unclear.
+- Can `newHTTPClient` ever be reached with a non-https `vaultAddr` in practice? Nothing in `main.go:363-374` observes the scheme — unclear; plaintext egress with an unused client certificate is not excluded.
+- Is the 3xx response body ever closed on the redirect path? `http.Client` leaves it open with `ErrUseLastResponse` and the library's send loop re-issues without closing the previous response — unclear; needs inspection.
+- How does socks5 proxying interact with the replaced `DialContext`? The transport special-cases socks5 and no repo test covers it — unclear.
+- Which fires first for the `-yubi` path, the request-scoped context deadline or `Client.Timeout`, given the crypto11 signer runs inside the handshake and is bounded only by the inherited 10s `TLSHandshakeTimeout`? Unclear.
+
+**clientTLSConfig (`main.go:345-355`)**
+- The actual Vault/OpenBao listener's ALPN set and advertised CA names are unverified (no live server contacted); which handshake path and which `certificateAuthorities` list apply in production is unverified — the callback ignores the list either way.
+- An `https://` TLS-terminating proxy in the loop is needed to confirm a proxy-issued `CertificateRequest` draws the same client certificate; the code reuses one `TLSClientConfig` with no proxy-specific config, but this was not exercised.
+- A runtime check of `fips140tls.Required()` for the built binary is needed; it would restrict the offered version list independently of `MinVersion`.
+- The operator's actual trust store contents (and any `SSL_CERT_FILE`) are unknown; this config sets none.
+- A race-instrumented run is needed to confirm the h2 `NextProtos` write cannot interleave with a handshake read of the same config object ([INFERENCE] in the record).
+
+**newVaultClient (`main.go:326-343`)**
+- What happens when `vaultAddr` starts with `unix://`? `parseAddress` rewrites the base URL and `newClient` replaces `DialContext` with `net.Dial("unix", …)`, which would discard the 5s dialer set at `main.go:365`; ciphertext/TLS expectations for such an address are unverified (no test, no documented support) — unclear.
+- The state of a crypto11 signer used by a `tls.Certificate` after `Context.Close` is unread for v1.6.8; whether a handshake attempted after `Close` (e.g. from an in-flight retry) fails or blocks is unclear.
+- Can any code path reuse the returned `*vault.Client` after `loginAndClose` closes the auth client? Grep shows it is only used inside `AuthenticateAndGetToken` before `Close`, but `Clone()` semantics would let a caller keep a sharing copy — unclear.
+- The real wall-clock bound of the full login flow is unmeasured: two sequential calls each get their own 30s budget, so the per-call 11–11.5s worst case for an unreachable address is `[INFERENCE]` and untested.
+- Is HTTP/2 actually negotiated on the real Vault endpoint? `ForceAttemptHTTP2` is inherited true while `TLSClientConfig` is replaced and `GetClientCertificate` is used; no test asserts the negotiated protocol — unclear.
+
+*Not checked: nothing outside the supplied orientation/records — no source, tests, hardware, proxy, live Vault or CI run. Main residual risk: statements about the 8 uncovered units (`loginAndClose`, `YubikeyVaultClient.Close`, `requireForMode`, `pathErrCause`, `certCNs`, `main`, both CI jobs) and all black-box server/module behaviour rest on other records' citations or are marked unclear.*
