@@ -64,6 +64,44 @@ func TestAuthenticateAndGetToken_Success(t *testing.T) {
 	}
 }
 
+func TestAuthenticateAndGetToken_NilCertLoginResponse(t *testing.T) {
+	mock := &MockVaultClient{}
+	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
+	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	if err == nil || !strings.Contains(err.Error(), "cert login response not found") {
+		t.Errorf("expected cert login response error, got %v", err)
+	}
+}
+
+func TestAuthenticateAndGetToken_NilTokenLookUpSelfResponse(t *testing.T) {
+	mock := &MockVaultClient{
+		CertLoginResp: &vault.Response[map[string]interface{}]{
+			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
+		},
+	}
+	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
+	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	if err == nil || !strings.Contains(err.Error(), "token lookup-self response not found") {
+		t.Errorf("expected lookup-self response error, got %v", err)
+	}
+}
+
+func TestAuthenticateAndGetToken_EmptyID(t *testing.T) {
+	mock := &MockVaultClient{
+		CertLoginResp: &vault.Response[map[string]interface{}]{
+			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
+		},
+		TokenLookUpSelfResp: &vault.Response[map[string]interface{}]{
+			Data: map[string]interface{}{"id": ""},
+		},
+	}
+	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
+	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	if err == nil || !strings.Contains(err.Error(), "token id is empty") {
+		t.Errorf("expected empty token id error, got %v", err)
+	}
+}
+
 func TestAuthenticateAndGetToken_NoAuth(t *testing.T) {
 	mock := &MockVaultClient{
 		CertLoginResp: &vault.Response[map[string]interface{}]{Auth: nil},
