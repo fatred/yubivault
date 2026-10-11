@@ -77,12 +77,12 @@ PKI steps of [PKI setup](pki-setup.md), not for running yubivault.
 Requires Go 1.27 or newer and a C compiler, because the PKCS#11 bindings use cgo:
 
 ```shell
-go install github.com/fatred/yubivault@latest
+go install github.com/fatred/yubivault@main
 ```
 
-`go install` produces an untagged binary, so `yubivault -version` prints `dev` rather than a
-release version. The release workflow injects the real version with
-`-ldflags "-X main.Version=<tag>"`.
+`@main` installs the current `main` branch. `@latest` installs the latest tagged release and may
+not include behaviour described on this site. A source-installed binary reports `dev`; the release
+workflow injects the tag with `-ldflags "-X main.Version=<tag>"`.
 
 ## Check the installation
 

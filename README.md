@@ -70,8 +70,10 @@ sudo apt install opensc  # Debian/Ubuntu
 From source, with Go 1.27 or newer and a C compiler (the PKCS#11 bindings use cgo):
 
 ```shell
-go install github.com/fatred/yubivault@latest
+go install github.com/fatred/yubivault@main
 ```
+`@main` installs the current `main` branch; `@latest` installs the latest tagged release and may not include
+behaviour described in this documentation.
 
 ## Quick start
 
