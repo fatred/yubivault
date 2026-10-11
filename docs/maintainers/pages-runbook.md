@@ -5,11 +5,11 @@ the deploy job calls `actions/deploy-pages`. That only works once the repository
 with **GitHub Actions** as the source. Until then the deploy job fails (typically
 `Get Pages site failed … Not Found` / `Create Pages site failed`), while the build job succeeds.
 
-Enabling Pages is a repository **admin** setting. The `gh` account used for development has push
-access but not admin, so this cannot be scripted from that login — an owner has to do it once in
-the browser (or with an admin-scoped token). Nothing else about the site needs configuring: the
-workflow requests `pages: write` and `id-token: write` for the deploy job itself, and
-`*.github.io` is HTTPS by default.
+Enabling Pages is a repository **admin** setting. If you do not have admin permission, a repository
+owner must complete the one-time setup in the browser or with an admin-scoped token. The workflow
+requests `pages: write` and `id-token: write` only for its deploy job.
+
+Enable Pages before merging to `main`: otherwise the `Docs` run on `main` fails and the published-site links in `README.md` return 404.
 
 ## Steps
 
@@ -29,10 +29,16 @@ workflow requests `pages: write` and `id-token: write` for the deploy job itself
    only `main` able to publish, which the workflow already enforces with its
    `if: github.event_name == 'push' && github.ref == 'refs/heads/main'` conditions.
 
-For an owner with an admin-scoped token, the same change over the API is:
+For an owner with an admin-scoped token, use `POST` if Pages is not configured yet:
 
 ```shell
 gh api -X POST repos/fatred/yubivault/pages -f build_type=workflow
+```
+
+If a Pages site already exists and uses a branch source, update it with `PUT`:
+
+```shell
+gh api -X PUT repos/fatred/yubivault/pages -f build_type=workflow
 ```
 
 ## Verify the first deployment
@@ -50,7 +56,7 @@ gh api -X POST repos/fatred/yubivault/pages -f build_type=workflow
 
    A `status` of `built` and a `200` mean the first deployment worked. Deployments are also listed
    under the repository's **Deployments** (right-hand sidebar on the code page).
-3. Spot-check the pages the nav claims exist, and that internal material is absent:
+3. Confirm the normal docs pages return `200`:
 
    ```shell
    for p in "" "install/" "usage/" "pki-setup/" "agents/" "maintainers/architecture/"; do
@@ -58,9 +64,6 @@ gh api -X POST repos/fatred/yubivault/pages -f build_type=workflow
      curl -sS -o /dev/null -w '%{http_code}\n' "https://fatred.github.io/yubivault/$p"
    done
    # each must print 200
-
-   curl -sS -o /dev/null -w '%{http_code}\n' https://fatred.github.io/yubivault/audit-context/DOSSIER/
-   # must print 404
    ```
 
 4. From then on, every merge to `main` publishes automatically. Pull requests only build the site

@@ -27,7 +27,7 @@ flag package with `ExitOnError`, so an unknown flag (`-foo`) exits 2 and `-h` ex
 So the token can be captured directly:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
 ```
 
 yubivault does not export `VAULT_ADDR` or anything else: set that yourself (or in your shell
@@ -49,11 +49,13 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 4. If stdin is not a terminal — a cron job, a CI step, a pipe — the prompt cannot be read and the
    run fails with `could not read PIN code: ...`. Use `TOKEN_PIN` there.
 
-To keep a PIN out of shell history and out of the process environment of unrelated commands:
+To keep a PIN out of shell history, and give it only to the yubivault process rather than to every command:
 
 ```shell
-read -rs -p 'YubiKey PIN: ' TOKEN_PIN; export TOKEN_PIN
-export VAULT_TOKEN="$(yubivault -yubi)"
+printf 'YubiKey PIN: ' >&2
+read -rs TOKEN_PIN
+printf '\n' >&2
+VAULT_TOKEN="$(TOKEN_PIN="$TOKEN_PIN" yubivault -yubi)" && export VAULT_TOKEN
 unset TOKEN_PIN
 ```
 
@@ -61,7 +63,8 @@ unset TOKEN_PIN
 same user while it runs). Prefer the interactive prompt on a shared machine.
 
 **The YubiKey retry counter is a hard limit.** Firmware 5.x allows three PIN attempts; after that
-the PIV applet is locked until it is reset with the PUK. yubivault never guesses a PIN and never
+the PIN is blocked. Unblock it with the PUK; if the PUK is blocked too, only a destructive PIV
+reset remains, which wipes the keys on the card. yubivault never guesses a PIN and never
 retries a failed `C_Login` (a failed attempt is counted by the card, not by yubivault). If the PIN
 is unknown, stop and find out before running.
 
@@ -74,9 +77,9 @@ Both modes share one HTTP transport:
 | Connect (dial) timeout | 5 seconds per attempt, covering DNS and connecting |
 | Request timeout | 30 seconds per attempt (HTTP client), and a 30-second cap on the request from the Vault client library |
 | Retries | One, after a 1–1.5 second backoff — two attempts per request. Retried: connection errors and the library's retryable statuses (5xx except 501, 429, 412). |
-| Redirects | Not followed; the HTTP client returns 3xx responses as-is. |
+| Redirects | `vault-client-go` follows at most one 301, 302 or 307; HTTPS-to-non-HTTPS redirects are refused. |
 | Proxy | Honoured from the environment: `HTTPS_PROXY`/`https_proxy`, `HTTP_PROXY` and `NO_PROXY`/`no_proxy`. |
-| TLS | Server verified against the system trust store; minimum TLS 1.2. `SSL_CERT_FILE`/`SSL_CERT_DIR` can point at a CA bundle instead. |
+| TLS | Server verified against the system trust store; minimum TLS 1.2. On Linux, `SSL_CERT_FILE`/`SSL_CERT_DIR` can point at a CA bundle instead; on macOS, add the CA to the keychain. |
 | Client certificate | Presented whenever the server asks, regardless of which CA names it advertises. For `-yubi` the leaf certificate only is sent; make sure the cert-auth role trusts the issuing CA. |
 
 What a failure looks like, in wall-clock terms:
@@ -85,8 +88,7 @@ What a failure looks like, in wall-clock terms:
 - A blackholed address (traffic silently dropped) fails after about 11 seconds with
   `dial tcp 10.62.0.1:8200: i/o timeout`. The error names the address that was tried, which tells a
   refused connection (`connection refused`) apart from an unreachable one.
-- A TLS-terminating load balancer in front of Vault breaks certificate auth: the client
-  certificate never reaches Vault. Vault must terminate TLS itself.
+- A TLS-terminating proxy means Vault does not receive yubivault's original client-certificate handshake. Vault's listener has a forwarded-client-certificate option (`x_forwarded_for_client_cert_header`; not verified here), but yubivault does not set forwarded-certificate headers. This guide assumes Vault receives the TLS connection directly.
 
 ## Signals and exit codes
 
@@ -110,7 +112,6 @@ reports 130).
 
 ## Token lifetime
 
-The cert-auth role's `token_ttl`/`token_max_ttl` bound the token. A token issued by cert auth
-cannot be renewed on its own — Vault requires the client certificate again — so re-run yubivault
-when the token expires rather than trying to renew it. If you need a longer-lived session,
-authenticate once and have Vault, not yubivault, create the token you keep.
+The cert-auth role's `token_ttl`/`token_max_ttl` bound the token. Whether a cert-auth token can be
+renewed without presenting the client certificate again depends on the role and server
+(unverified here), and yubivault never renews: re-run it when the token expires.

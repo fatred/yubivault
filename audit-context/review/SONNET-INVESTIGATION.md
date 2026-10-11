@@ -2,7 +2,7 @@
 
 ## Method and conventions
 
-- **Repo state.** `/home/jhow/git/yubivault` at HEAD `7f10998`. `git status` is clean.
+- **Repo state.** `<repo-root>` at HEAD `7f10998`. `git status` is clean.
 - **Toolchain and modules.** Go 1.27.2, cgo enabled. Module versions are the pinned ones from `go.mod`:
   - `crypto11` v1.6.8
   - `miekg/pkcs11` v1.1.2

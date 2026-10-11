@@ -51,11 +51,11 @@ Legend: **open** = no evidence received; **partial** = some evidence, listed wit
 
 ### 3a. Live Vault/OpenBao evidence received
 
-[agent-run, scratch] Real login against `https://vault.problemofnetwork.com:8200`:
+[agent-run, scratch] Real login against `https://vault.example.invalid:8200`:
 - A **failed** login with a deliberately nonexistent role returned HTTP 400 `failed to match all constraints for this login certificate`. This run was `pkcs11-spy`-traced.
-- A **successful** login with the configured `admin` role exited 0; `lookup-self` returned HTTP 200. The token was then revoked (204) and a later `lookup-self` returned 403. The `jhow` identity entity/alias existed before the test and was left intact. This login was **not** spy-traced.
+- A **successful** login with the configured `admin` role exited 0; `lookup-self` returned HTTP 200. The token was then revoked (204) and a later `lookup-self` returned 403. The `example-user` identity entity/alias existed before the test and was left intact. This login was **not** spy-traced.
 
-Limits: the brief does not say whether the server is Vault or OpenBao, nor what mount, role or CA configuration it has. The failed-role response is a **nonexistent-role** response; it is not the wrong-certificate response that row 38 asks for. The brief does not record whether `data.id` from `lookup-self` equals `auth.client_token` (row 2). The live login also implies that this one host's CA is trusted by this one workstation [INFERENCE], because the HTTPS handshake completed; the Hawse root and intermediate CAs are in this workstation's trust store [per workstation notes].
+Limits: the brief does not say whether the server is Vault or OpenBao, nor what mount, role or CA configuration it has. The failed-role response is a **nonexistent-role** response; it is not the wrong-certificate response that row 38 asks for. The brief does not record whether `data.id` from `lookup-self` equals `auth.client_token` (row 2). The live login also implies that this one host's CA is trusted by this one workstation [INFERENCE], because the HTTPS handshake completed; the organization's root and intermediate CAs are in this workstation's trust store [per workstation notes].
 
 ### 3b. Vault/OpenBao maintainers or the deployment operator
 
@@ -71,7 +71,7 @@ Limits: the brief does not say whether the server is Vault or OpenBao, nor what 
 
 ### 3c. OpenSC / YubiKey (real card)
 
-Card: YubiKey 5 NFC, firmware 5.1.2, PIV slot 9A, certificate CN `jhow`, OU `vault-admins`, ECC P-384 [agent-run, scratch]. `ykman piv info` continues to report three PIN tries remaining. Its `Private key type: EMPTY` line is a known firmware-metadata limitation and is not evidence that the key is absent.
+Card: YubiKey 5 NFC, firmware 5.1.2, PIV slot 9A, certificate CN `example-user`, OU `example-team`, ECC P-384 [agent-run, scratch]. `ykman piv info` continues to report three PIN tries remaining. Its `Private key type: EMPTY` line is a known firmware-metadata limitation and is not evidence that the key is absent.
 
 | Row | ID | Question | Status | Evidence and limit |
 |---|---|---|---|---|

@@ -55,9 +55,9 @@ and the reason the variable exists at all.
 `ci.yml` runs on pushes to `main`, on every pull request, and monthly (so newly published
 advisories are found without a code change).
 
-- `build-and-test` runs on `ubuntu-latest` and `macos-latest` (Apple Silicon) with Go 1.27 and the
-  five checks above. The macOS job matters: cgo means the darwin/arm64 build cannot be
-  cross-compiled from Linux.
+- `build-and-test` runs on `ubuntu-latest` and `macos-latest` (Apple Silicon) with Go 1.27 and four
+  checks: `go mod tidy -diff`, gofmt, `go vet` and `go test -race`. The macOS job matters: cgo means
+  the darwin/arm64 build cannot be cross-compiled from Linux.
 - On Linux only, the job installs `softhsm2` and `opensc` and exports
   `YUBIVAULT_REQUIRE_SOFTHSM=1`, so the integration test is a hard failure there and a skip on
   macOS.
@@ -122,10 +122,10 @@ Table-driven tests with `t.Run` are the house style. Useful helpers already exis
 Once per behaviour change to the `-yubi` path, on a card you own:
 
 ```shell
-export VAULT_TOKEN="$(/tmp/yubivault -yubi)"
+VAULT_TOKEN="$(/tmp/yubivault -yubi)" && export VAULT_TOKEN
 ```
 
-- Never type or invent a PIN you are not certain of: three wrong attempts lock the PIV applet.
+- Never type or invent a PIN you are not certain of: three wrong attempts block the PIN.
   Confirm with `ykman piv info` that attempts remain before testing.
 - Do not run card-mutating commands (`ykman piv` writes, `pkcs11-tool --login` loops) to
   investigate a failure.

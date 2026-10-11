@@ -153,7 +153,7 @@ vault write auth/cert/certs/admin \
    - Under **Constraints**, set **Allowed organizational units** to `vault-admins`.
    - Click **Save**.
 
-Cert auth needs Vault itself to terminate TLS. If a load balancer or proxy terminates TLS in front of Vault, the client certificate never reaches Vault and login fails.
+This guide assumes Vault receives yubivault's TLS connection directly. A TLS-terminating proxy means Vault does not see the original client-certificate handshake; Vault's listener has a forwarded-client-certificate option (`x_forwarded_for_client_cert_header`; not verified here), but yubivault does not set forwarded-certificate headers.
 
 ## 6. User: configure yubivault
 
@@ -177,7 +177,7 @@ yubikeyPivSerial: "<serial num from pkcs11-tool>"
 Log in:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
 vault token lookup
 ```
 

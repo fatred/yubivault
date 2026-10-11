@@ -29,8 +29,8 @@ On success there are no side effects beyond memory: no writes, no token, no stat
 
 **Path construction.** Both paths are `filepath.Join(homeDir, ".yubivault", <config value>)` (main.go:157, :161), where `.yubivault` is the shared constant at main.go:100. Consequences I verified empirically on this toolchain, since the assignment asks about path handling:
 
-- A leading `/` in the config value does not reset to root: `Join("/home/j", ".yubivault", "/etc/shadow")` → `/home/j/.yubivault/etc/shadow`. Absolute config values are re-rooted under `.yubivault`, not honoured.
-- `..` is resolved lexically by Clean: `Join("/home/j", ".yubivault", "../../etc/shadow")` → `/home/etc/shadow`, and a value of ".." yields `/home/j` itself. There is no containment check anywhere in main.go:155-201.
+- A leading `/` in the config value does not reset to root: `Join("$HOME", ".yubivault", "/etc/shadow")` → `$HOME/.yubivault/etc/shadow`. Absolute config values are re-rooted under `.yubivault`, not honoured.
+- `..` is resolved lexically by Clean: `Join("$HOME", ".yubivault", "../../etc/shadow")` → `$HOME/../etc/shadow`, and a value of ".." yields `$HOME` itself. There is no containment check anywhere in main.go:155-201.
 - Interior `..` is also cleaned (`sub/../client-cert.key` → `.../client-cert.key`), and a trailing slash is dropped.
 
 The function holds the invariant that a *bare* name resolves inside `<homeDir>/.yubivault`; it does not hold any invariant that the resolved path stays there.

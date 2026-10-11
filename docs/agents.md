@@ -1,8 +1,7 @@
 # Agent instructions
 
 Instructions for AI coding agents (and anyone working with one) making changes to this repository.
-There is deliberately no root `AGENTS.md`: this page is the agent entry point, so it lives with the
-documentation and is versioned with it.
+The root `AGENTS.md` directs agents here for the full repository workflow and invariants.
 
 ## Read before editing
 
@@ -16,8 +15,8 @@ documentation and is versioned with it.
 | `.github/workflows/release.yml` | Build/ldflags/tag expectations. |
 | `docs/` | User-facing claims. Any behaviour change updates the matching page. |
 
-`audit-context/` holds internal audit material. It is intentionally outside `docs_dir` and must
-never be added to the nav or referenced from published pages.
+Internal audit material lives outside `docs_dir`. It is not in the published site and must not be
+added to the nav or referenced from published pages.
 
 ## Where the code is
 
@@ -71,7 +70,7 @@ Preserve these; each is relied on by tests, docs or the shell contract.
 ## Verify a change
 
 ```shell
-export PATH=$HOME/.go/bin:$HOME/go/bin:$PATH   # if the toolchain is not on PATH
+export PATH="$(go env GOPATH)/bin:$PATH"             # if Go-installed tools are not on PATH
 gofmt -l .                                     # must print nothing
 go mod tidy -diff                              # must print nothing
 go vet ./...
@@ -88,11 +87,11 @@ YUBIVAULT_REQUIRE_SOFTHSM=1 go test -race -run SoftHSM ./...
 
 For changes to `run`, the transport, or PIN handling, exercise the changed path. A live Vault login
 is appropriate only when you are authorized to use that non-production environment; otherwise use
-the existing `httptest` and SoftHSM coverage. To check the non-terminal PIN failure without sending
-a PIN to the card, use a valid `-yubi` config and run:
+the existing `httptest` and SoftHSM coverage. To check the non-terminal PIN failure without using
+the environment PIN or contacting the card, use a valid `-yubi` config and run:
 
 ```shell
-yubivault -yubi </dev/null
+env -u TOKEN_PIN yubivault -yubi </dev/null
 ```
 
 ## Tests
@@ -125,14 +124,14 @@ yubivault -yubi </dev/null
 
 ## Hard constraints
 
-- **Never guess a YubiKey PIN.** Three wrong attempts lock the PIV applet. Do not run anything that
-  consumes a PIN attempt (`pkcs11-tool --login`, `ykman piv` operations, repeated `-yubi` runs) to
-  "see what happens".
+- **Never guess a YubiKey PIN.** Three wrong attempts lock the PIV applet. Do not run
+  PIN-verification or card-mutating commands, `pkcs11-tool --login`, or repeated `-yubi` runs unless
+  the owner explicitly authorizes the attempt. `ykman piv info` is read-only; it shows remaining
+  tries but does not validate a candidate PIN.
 - Do not commit, print or paste PINs, tokens, private keys, or real token serial numbers into code,
   tests, docs or commit messages. Test fixtures use throwaway SoftHSM tokens and self-signed
   certificates.
 - Do not run destructive commands against a real card or a live Vault (no PIN changes, no factory
   reset, no token or entity deletion) unless the owner asks for it explicitly.
-- Do not add a root `AGENTS.md`, `CLAUDE.md` or similar: instructions belong on this page.
-- Do not edit `audit-context/` during ordinary documentation changes. Update it only when that work
-  is explicitly in scope; never publish it.
+- The root `AGENTS.md` points here; keep the repository-wide rules consistent with this page.
+- Keep internal review material outside `docs/`; never copy it into published pages.

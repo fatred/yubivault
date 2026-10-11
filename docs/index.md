@@ -11,7 +11,7 @@ token. The client certificate and key come from one of two places:
 The token is the only thing written to stdout, so it can be captured directly:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
 ```
 
 The PIN prompt, warnings and errors all go to stderr, which keeps that capture clean.
@@ -23,10 +23,8 @@ The PIN prompt, warnings and errors all go to stderr, which keeps that capture c
    the YubiKey with `CKA_ID`-paired key material.
 3. It opens a TLS connection to `vaultAddr`, presenting the client certificate, and posts
    `{"name": "<certAuthName>"}` to `/v1/auth/<certAuthMount>/login`.
-4. Vault matches the certificate against the constraints of that cert-auth role (organizational
-   units, common names, CA) and returns a token.
-5. yubivault reads the token back with `auth/token/lookup-self` and prints its `id`. That value is
-   the token your shell should hold.
+4. The server evaluates the certificate against its cert-auth configuration and, if accepted, returns a login response.
+5. yubivault uses `auth.client_token` for `auth/token/lookup-self` and prints the response's `data.id`. The successful test deployment accepted the printed value as a token; equality between `data.id` and `auth.client_token` has not been established across deployments.
 
 Because the authorisation decision is made from the certificate at login, adding or removing a
 person is a PKI operation, not a Vault configuration change: see
@@ -57,9 +55,8 @@ mkdir -p ~/.yubivault && chmod 700 ~/.yubivault
 $EDITOR ~/.yubivault/config.yml       # see Configuration
 
 # 3. Log in
-export VAULT_TOKEN="$(yubivault -yubi)"
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
 yubivault -version
 ```
 
-For `-yubi` you also need OpenSC, and the YubiKey must hold a certificate in PIV slot 9a that the
-Vault cert-auth role trusts. [PKI setup](pki-setup.md) walks through all of it.
+For `-yubi` you also need OpenSC. The PKI guide uses PIV slot 9a, but yubivault selects a paired certificate and key exposed by the configured PKCS#11 module. See [PKI setup](pki-setup.md) for that convention.

@@ -1,6 +1,6 @@
 # Structural analysis — `selectCertificate` (`main.go:213-241`) and `certCNs` (`main.go:243-254`)
 
-Module: `package main`, single-file program (`main.go`), plus `main_test.go` (584 lines) and prior audit notes in `audit-context/`. crypto11 dependency pinned at `go.mod:6` → `github.com/eclipse-keypont/crypto11 v1.6.8` (module cache path `/home/jhow/go/pkg/mod/github.com/eclipse-keypont/crypto11@v1.6.8/`).
+Module: `package main`, single-file program (`main.go`), plus `main_test.go` (584 lines) and prior audit notes in `audit-context/`. crypto11 dependency pinned at `go.mod:6` → `github.com/eclipse-keypont/crypto11 v1.6.8` (module cache path `$GOMODCACHE/github.com/eclipse-keypont/crypto11@v1.6.8/`).
 
 ---
 

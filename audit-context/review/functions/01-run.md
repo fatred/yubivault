@@ -122,7 +122,7 @@ Skipped/not checked: no live Vault or YubiKey was used, so R2's external semanti
 ---
 
 **Evidence addendum [agent-run, scratch, 2026-10-11].** Current lower-level status: [../TREATMENT-STATUS.md](../TREATMENT-STATUS.md) §3. Real runs now exist (all temporary binaries, configs and traces deleted; no artifact retained):
-- **R2** — a live cert login at `https://vault.problemofnetwork.com:8200` succeeded (role `admin`, `lookup-self` HTTP 200, then token revoked 204 / lookup 403), but `data.id == auth.client_token` was **not** recorded and the successful login was not spy-traced. R2 stays TRANSFER (§3a).
+- **R2** — a live cert login at `https://vault.example.invalid:8200` succeeded (role `admin`, `lookup-self` HTTP 200, then token revoked 204 / lookup 403), but `data.id == auth.client_token` was **not** recorded and the successful login was not spy-traced. R2 stays TRANSFER (§3a).
 - **R3** — the non-terminal path was exercised at app level: `-yubi` with `/dev/null` stdin exits 1 with empty stdout. Row 3 remains TERMINATE.
 - **R4-residual** — still no automated test of the signal exit path; the successful login exited 0 with a live HTTPS request, but no signal case was run. TOLERATE unchanged.
 - Hardware, live Vault and CI runs still absent for R1/R5; classifications unchanged.

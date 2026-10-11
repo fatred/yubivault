@@ -1,7 +1,9 @@
 # Configuration
 
 yubivault reads exactly one file: `$HOME/.yubivault/config.yml`. There is no command-line or
-environment override for any field (the PIN is the sole environment input, see [Usage](usage.md)).
+environment override for any config field. The environment still matters: `HOME` locates the file,
+`TOKEN_PIN` supplies the PIN (see [Usage](usage.md)), and the proxy variables and, on Linux,
+`SSL_CERT_FILE`/`SSL_CERT_DIR` affect the network connection.
 
 Create the directory and restrict it to yourself:
 
@@ -64,8 +66,8 @@ Find the PKCS#11 token serial with the YubiKey inserted:
 pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots
 ```
 
-Use the `serial num` line of the slot for your YubiKey. It is a long number (typically 16 digits)
-and is unrelated to the serial printed on the device or shown by `ykman`.
+Use the `serial num` line of the slot for your YubiKey, copied exactly as printed. It is unrelated
+to the serial printed on the device or shown by `ykman`.
 
 ## Example: `-local`
 

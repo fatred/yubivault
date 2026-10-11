@@ -8,7 +8,8 @@ boundaries that are deliberate.
 
 ### The private key
 
-- **`-yubi`**: the key is generated in PIV slot 9a on the YubiKey and is not exportable. Only the
+- **`-yubi`**: the key lives on the YubiKey and is not exportable (the [PKI setup](pki-setup.md)
+  guide generates it in PIV slot 9a by convention). Only the
   certificate is read; the signature happens on the card. A stolen copy of `~/.yubivault` is not
   enough to authenticate without the card and its PIN.
 - **`-local`**: the key is a file in `~/.yubivault`. yubivault opens it, checks the mode of the
@@ -26,8 +27,8 @@ boundaries that are deliberate.
 - The PIN is either read from `TOKEN_PIN` (trimmed) or prompted for on stderr with terminal echo
   disabled, and is passed straight to the PKCS#11 module's `C_Login`.
 - It is never written to disk, never included in an error message, and never logged.
-- A wrong PIN is not retried: the YubiKey counts the attempt. Three failed attempts lock the PIV
-  applet until it is reset with the PUK, so yubivault never guesses a PIN.
+- A wrong PIN is not retried: the YubiKey counts the attempt. Three failed attempts block the PIN;
+  unblock it with the PUK. If the PUK is blocked too, only a destructive PIV reset remains (it wipes the keys on the card), so yubivault never guesses a PIN.
 - `TOKEN_PIN` sits in the process environment, readable by other processes of the same user. Use
   the interactive prompt on a shared machine, and keep the PIN out of shell history.
 
@@ -56,7 +57,7 @@ boundaries that are deliberate.
 | Component | How it is trusted |
 |---|---|
 | The invoking user, `~/.yubivault`, `config.yml` | Trusted. The config is operator-controlled; its own permissions are not checked. |
-| The Vault/OpenBao server | Authenticated by TLS using the system trust store. There is no certificate pinning and no way to disable verification. `SSL_CERT_FILE`/`SSL_CERT_DIR` can redirect the trust store, so a hostile environment variable can point the client at another CA. |
+| The Vault/OpenBao server and any redirect target | Authenticated by TLS using the system trust store; there is no certificate pinning or way to disable verification. On Linux, `SSL_CERT_FILE`/`SSL_CERT_DIR` can redirect the trust store. `vault-client-go` follows at most one 301/302/307 to an HTTPS target; on `lookup-self` the request's `X-Vault-Token` is retained and the client certificate may be presented to that target. Trust the endpoint and any redirect destination. |
 | The PKCS#11 module (`openscPath`) | Loaded with `dlopen` into the yubivault process and given the PIN. A config that names an untrusted module means running untrusted native code with the PIN. |
 | Environment (`TOKEN_PIN`, proxy variables, `SSL_CERT_FILE`, `HOME`) | Caller-controlled. Proxy variables redirect where the Vault request goes (a proxy sees the TLS session, not the plaintext). |
 | The shell reading stdout | Trusted by design: stdout carries only the token. |
@@ -74,8 +75,7 @@ boundaries that are deliberate.
 - Grant the cert-auth role the narrowest constraint that works
   (`allowed_organizational_units` or `allowed_common_names`) and a short `token_ttl`, and revoke
   certificates that are no longer needed.
-- Terminate TLS at Vault itself: a proxy in front of Vault means the client certificate never
-  reaches Vault, so certificate authentication cannot work.
+- This guide assumes Vault receives yubivault's TLS connection directly. A TLS-terminating proxy means Vault does not see the original client-certificate handshake; Vault's listener has a forwarded-client-certificate option (`x_forwarded_for_client_cert_header`; not verified here), but yubivault does not set forwarded-certificate headers.
 
 ## Deliberate boundaries
 
@@ -87,5 +87,4 @@ boundaries that are deliberate.
   `client_token not found or empty` or `auth field not found in response`. The exact response
   behavior depends on the Vault/OpenBao deployment.
 - No token persistence, caching or renewal; each run is one login.
-- The token in stdout is `auth/token/lookup-self`'s `id`, read back over the authenticated
-  connection rather than taken from the login response body alone.
+- yubivault prints `data.id` from `auth/token/lookup-self`. The equality of that field to the login response's `auth.client_token` was not recorded across Vault/OpenBao deployments; verify the behavior of your server.

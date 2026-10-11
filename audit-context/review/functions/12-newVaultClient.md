@@ -147,6 +147,6 @@ Skipped: I did not rerun Sonnet's timing (11.2s/21s), h2-fixture or race observa
 
 **Evidence addendum [agent-run, scratch, 2026-10-11].** Current status: [../TREATMENT-STATUS.md](../TREATMENT-STATUS.md) §2–§3. All temporary binaries, configs and traces were deleted; nothing retained.
 - **V1 (30)** — resolved, not TOLERATE: `LoadConfig` now accepts only absolute HTTPS URLs and rejects `unix://` (and every other non-HTTPS scheme) before client construction (`main.go:129-142`; `TestLoadConfig_RejectsNonHTTPSVaultAddr`). D-1/T-3. The library `unix://` branch is unreachable from this CLI.
-- **V5 (61)** — TRANSFER stays open. `newVaultClient` reached `https://vault.problemofnetwork.com:8200` and one cert login succeeded (role `admin`, `lookup-self` HTTP 200, then token revoked 204 / lookup 403), so the client works against one listener; that listener's ALPN set was not observed and no test asserts the negotiated protocol.
+- **V5 (61)** — TRANSFER stays open. `newVaultClient` reached `https://vault.example.invalid:8200` and one cert login succeeded (role `admin`, `lookup-self` HTTP 200, then token revoked 204 / lookup 403), so the client works against one listener; that listener's ALPN set was not observed and no test asserts the negotiated protocol.
 - **V2b (58b)** — TRANSFER stays open: no stalled/touch-policy `C_Sign` and no close-time hazard was run.
 - **V2, V3, V4, Q6** — unchanged; the retried-login and wall-clock items were not re-measured.

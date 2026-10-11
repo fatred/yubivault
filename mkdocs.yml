@@ -12,6 +12,13 @@ docs_dir: docs
 # Build tooling that lives in docs/ but is not documentation.
 exclude_docs: |
   requirements.txt
+  requirements.in
+
+# Make `mkdocs build --strict` fail on omitted pages, broken links and broken anchors.
+validation:
+  nav: {omitted_files: warn, not_found: warn, absolute_links: warn}
+  links: {not_found: warn, absolute_links: warn, unrecognized_links: warn}
+  anchors: warn
 
 # The built-in plain theme: no external theme, plugin or JS dependency.
 theme:

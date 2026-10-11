@@ -6,7 +6,7 @@ OpenSC/PKCS#11 (`-yubi`). The token is the only thing written to stdout, so it c
 directly:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN   # OpenBao: BAO_TOKEN
 ```
 
 **Documentation: <https://fatred.github.io/yubivault/>**
@@ -30,7 +30,7 @@ In source form the same pages are in [`docs/`](docs/index.md), and the PKI guide
 Download the binary for your platform from the [latest release](https://github.com/fatred/yubivault/releases/latest).
 Supported platforms:
 
-- Linux x86-64: Debian 12 and 13, Ubuntu 24.04 and 26.04 (any distribution with glibc 2.34 or newer)
+- Linux x86-64: Debian 12 and 13, Ubuntu 24.04 and 26.04 (other distributions with glibc 2.34 or newer should work)
 - macOS on Apple Silicon
 
 Linux:
@@ -71,7 +71,7 @@ go install github.com/fatred/yubivault@latest
 ```shell
 mkdir -p ~/.yubivault && chmod 700 ~/.yubivault
 $EDITOR ~/.yubivault/config.yml     # see Configuration
-export VAULT_TOKEN="$(yubivault -yubi)"
+VAULT_TOKEN="$(yubivault -yubi)" && export VAULT_TOKEN
 ```
 
 Minimal `~/.yubivault/config.yml` for `-yubi`:
