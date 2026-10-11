@@ -480,6 +480,21 @@ func TestResolvePin(t *testing.T) {
 			t.Errorf("got %q, %v; want TOKEN_PIN value", pin, err)
 		}
 	})
+	t.Run("TOKEN_PIN trailing whitespace is trimmed", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", " 654321\n")
+		pin, err := resolvePin(&AppConfig{YubikeySerial: "12345"}, strings.NewReader("999999\n"), io.Discard)
+		if err != nil || pin != "654321" {
+			t.Errorf("got %q, %v; want trimmed TOKEN_PIN value", pin, err)
+		}
+	})
+	t.Run("whitespace-only TOKEN_PIN falls back to prompt", func(t *testing.T) {
+		t.Setenv("TOKEN_PIN", " \t\n")
+		pin, err := resolvePin(&AppConfig{YubikeySerial: "12345"}, strings.NewReader("123456\n"), io.Discard)
+		if err != nil || pin != "123456" {
+			t.Errorf("got %q, %v; want prompted PIN", pin, err)
+		}
+	})
+
 	t.Run("no TOKEN_PIN and empty input", func(t *testing.T) {
 		t.Setenv("TOKEN_PIN", "")
 		if _, err := resolvePin(&AppConfig{YubikeySerial: "12345"}, strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "need to enter PIN") {
