@@ -234,11 +234,20 @@ func TestLoadConfig_Rejects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			configDir := writeConfig(t, tt.content)
 			_, err := LoadConfig(configDir)
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
 			}
-			if tt.wantCause != "" && !strings.Contains(err.Error(), tt.wantCause) {
-				t.Errorf("expected YAML cause containing %q, got %v", tt.wantCause, err)
+			if tt.wantCause != "" {
+				if !strings.Contains(err.Error(), tt.wantCause) {
+					t.Errorf("expected YAML cause containing %q, got %v", tt.wantCause, err)
+				}
+				var wrapped interface{ Unwrap() error }
+				if !errors.As(err, &wrapped) || wrapped.Unwrap() == nil {
+					t.Errorf("expected wrapped YAML cause, got %v", err)
+				}
 			}
 			if tt.wantSuffix != "" && !strings.HasSuffix(err.Error(), tt.wantSuffix) {
 				t.Errorf("expected error to end with %q, got %v", tt.wantSuffix, err)
