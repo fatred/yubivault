@@ -132,7 +132,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	configPath := dir + "/.yubivault"
 	os.Mkdir(configPath, 0755)
 	file := configPath + "/config.yml"
-	content := []byte(`vaultAddr: "http://localhost:8200"
+	content := []byte(`vaultAddr: "https://localhost:8200"
 certAuthName: "test"
 certAuthMount: "cert"
 `)
@@ -142,8 +142,8 @@ certAuthMount: "cert"
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.VaultAddr != "http://localhost:8200" {
-		t.Errorf("expected VaultAddr to be set, got %v", cfg.VaultAddr)
+	if cfg.VaultAddr != "https://localhost:8200" {
+		t.Errorf("expected VaultAddr to be https, got %v", cfg.VaultAddr)
 	}
 	if cfg.CertAuthName != "test" {
 		t.Errorf("expected CertAuthName to be 'test', got %v", cfg.CertAuthName)
@@ -196,6 +196,45 @@ func TestLoadConfig_Rejects(t *testing.T) {
 				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestLoadConfig_RejectsNonHTTPSVaultAddr(t *testing.T) {
+	const base = "vaultAddr: https://localhost:8200\ncertAuthName: web\ncertAuthMount: cert\n"
+	tests := []struct {
+		name string
+		addr string
+	}{
+		{"http", "http://localhost:8200"},
+		{"unix", "unix:///run/vault.sock"},
+		{"other scheme", "ftp://vault.example.com"},
+		{"missing scheme", "localhost:8200"},
+		{"opaque https URI", "https:localhost:8200"},
+		{"missing host", "https:///v1"},
+		{"invalid port", "https://localhost:bad"},
+		{"hostless port", "https://:8200"},
+		{"userinfo in malformed URL", "https://user:secret@localhost:bad"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := strings.Replace(base, "https://localhost:8200", tt.addr, 1)
+			_, err := LoadConfig(writeConfig(t, content))
+			const want = "vaultAddr must be an absolute HTTPS URL"
+			if err == nil || err.Error() != want {
+				t.Errorf("LoadConfig() error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_NormalizesHTTPScheme(t *testing.T) {
+	const content = "vaultAddr: HTTPS://localhost:8200\ncertAuthName: web\ncertAuthMount: cert\n"
+	cfg, err := LoadConfig(writeConfig(t, content))
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if cfg.VaultAddr != "https://localhost:8200" {
+		t.Errorf("VaultAddr = %q, want normalized HTTPS URL", cfg.VaultAddr)
 	}
 }
 
