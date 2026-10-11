@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -123,13 +124,20 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%s must contain a single YAML document", path)
 	}
-	// Reject incomplete config up front rather than producing confusing
-	// downstream errors. Scheme is not enforced: cert-login needs a TLS
-	// handshake, so an http:// endpoint fails safely on its own, and local
-	// dev Vault (http://localhost:8200) stays usable.
+	// TLS is required for certificate authentication; accept only absolute
+	// HTTPS URLs.
 	if appConfig.VaultAddr == "" {
 		return nil, fmt.Errorf("vaultAddr is required")
 	}
+	vaultURL, err := url.Parse(appConfig.VaultAddr)
+	if err != nil {
+		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL: %w", err)
+	}
+	if !strings.EqualFold(vaultURL.Scheme, "https") || vaultURL.Opaque != "" || vaultURL.Hostname() == "" {
+		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL")
+	}
+	vaultURL.Scheme = "https"
+	appConfig.VaultAddr = vaultURL.String()
 	if appConfig.CertAuthName == "" || appConfig.CertAuthMount == "" {
 		return nil, fmt.Errorf("certAuthName and certAuthMount are required")
 	}

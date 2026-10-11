@@ -54,7 +54,7 @@ chmod 700 ~/.yubivault
 Then create `~/.yubivault/config.yml`:
 
 ```yaml
-# always required
+# HTTPS is required for certificate authentication.
 vaultAddr: https://vault.example.com:8200
 certAuthMount: cert           # path the cert auth method is mounted at
 certAuthName: my-role         # cert auth role to log in as

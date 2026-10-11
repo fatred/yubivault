@@ -166,7 +166,7 @@ pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots    
 Then write `~/.yubivault/config.yml`, using the `serial num` value from that output:
 
 ```yaml
-vaultAddr: https://vault.example.com:8200
+vaultAddr: https://vault.example.com:8200  # HTTPS is required
 certAuthMount: cert
 certAuthName: admin
 openscPath: /opt/homebrew/opt/opensc/lib/opensc-pkcs11.so   # or the Debian/Ubuntu path above
