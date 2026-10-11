@@ -75,7 +75,8 @@ The error body from Vault is reported as-is.
 | `permission denied` (HTTP 403) | The login worked but the token lacks access to `auth/token/lookup-self`, or the token was revoked between the two calls. | Check the role's `token_policies`; a policy that grants nothing on `auth/token/lookup-self` breaks the lookup step. |
 | `client_token not found or empty` or `auth field not found in response` | The login response did not provide a usable token. MFA or response wrapping may affect the response, but compatibility depends on the Vault/OpenBao deployment and is not established here. | Check the server's login response and configuration; yubivault requires `auth.client_token`. |
 | `cert login response not found`, `token lookup-self response not found` | Added after v1.4.2. The server returned 200 with an empty body. | Check for an interposing proxy that rewrites responses, and the server version. |
-| `token id not found or not a string`, `token id is empty` | Added after v1.4.2. The lookup response did not contain a usable non-empty string `id`. | Check the server response and whether the token remained valid during lookup; the message alone does not identify the cause. |
+| `token id not found or not a string` | The lookup response did not contain a string `id`; this error also existed in v1.4.2. | Check the server response. |
+| `token id is empty` | Added after v1.4.2. The lookup response contained an empty string `id`. | Check the server response and whether the token remained valid during lookup; the message alone does not identify the cause. |
 
 ## Signals
 

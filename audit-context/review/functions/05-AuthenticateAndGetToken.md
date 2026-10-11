@@ -135,6 +135,6 @@ Skipped: no live Vault/OpenBao contact, so all server-shape conclusions (A2/A6) 
 
 **Evidence addendum [agent-run, scratch, 2026-10-11].** Current status: [../TREATMENT-STATUS.md](../TREATMENT-STATUS.md) §2–§3. All temporary artifacts (binaries, configs, raw traces) were deleted; nothing retained.
 - **A1 (23), A3 (25)** — TREAT is merged: `resp == nil`, `tokenResp == nil` and empty `id` now return errors (`main.go:412-414`, `:429-431`, `:436-437`; tests `…_NilCertLoginResponse`, `…_NilTokenLookUpSelfResponse`, `…_EmptyID`). The "not yet applied" risk above no longer holds.
-- **A6/R2 (2)** — a live cert login with role `admin` succeeded (`lookup-self` HTTP 200); whether `data.id == auth.client_token` was **not** recorded, so TRANSFER stands (§3a) and the printed value is still `tokenResp.Data["id"]`.
+- **A6/R2 (2)** — a live cert login with the configured role succeeded (`lookup-self` HTTP 200); whether `data.id == auth.client_token` was **not** recorded, so TRANSFER stands (§3a) and the printed value is still `tokenResp.Data["id"]`.
 - **A2 (24), A4 (26)** — no MFA-enabled mount and no wrapping case were exercised; TRANSFER unchanged.
 - **A5 (27)** — unchanged (TOLERATE); `MockVaultClient.SetTokenErr` is still never assigned.

@@ -8,7 +8,7 @@ Inputs: [DOSSIER.md](../DOSSIER.md), the review, the per-function reports in [fu
 - **[repo]**: read in this checkout (source, tests, CI file, git log).
 - **[source]**: pinned module source, as the review cites it. Not re-read here.
 - **[agent-run]**: a scratch run on the real YubiKey, a disposable SoftHSM token, or the live Vault. No artifact was retained; all temporary binaries, configs and traces were deleted. These results cannot be re-read, only repeated.
-- **[reported]**: stated in the brief for this document, not verified by me (for example "post-merge CI passed").
+- **[reported]**: reported in the available task context, not independently verified here (for example, "post-merge CI passed").
 
 Secrets are deliberately absent: no PIN, token, raw `pkcs11-spy` trace or serial number is recorded here.
 
@@ -53,9 +53,9 @@ Legend: **open** = no evidence received; **partial** = some evidence, listed wit
 
 [agent-run, scratch] Real login against `https://vault.example.invalid:8200`:
 - A **failed** login with a deliberately nonexistent role returned HTTP 400 `failed to match all constraints for this login certificate`. This run was `pkcs11-spy`-traced.
-- A **successful** login with the configured `admin` role exited 0; `lookup-self` returned HTTP 200. The token was then revoked (204) and a later `lookup-self` returned 403. The `example-user` identity entity/alias existed before the test and was left intact. This login was **not** spy-traced.
+- A **successful** login with the configured role exited 0; `lookup-self` returned HTTP 200. The token was then revoked (204) and a later `lookup-self` returned 403. The `example-user` identity entity/alias existed before the test and was left intact. This login was **not** spy-traced.
 
-Limits: the brief does not say whether the server is Vault or OpenBao, nor what mount, role or CA configuration it has. The failed-role response is a **nonexistent-role** response; it is not the wrong-certificate response that row 38 asks for. The brief does not record whether `data.id` from `lookup-self` equals `auth.client_token` (row 2). The live login also implies that this one host's CA is trusted by this one workstation [INFERENCE], because the HTTPS handshake completed; the organization's root and intermediate CAs are in this workstation's trust store [per workstation notes].
+Limits: the available evidence does not identify whether the server is Vault or OpenBao, nor its mount, role or CA configuration. The failed-role response is a **nonexistent-role** response; it is not the wrong-certificate response that row 38 asks for. Equality between `data.id` from `lookup-self` and `auth.client_token` (row 2) was not recorded. The live login also implies that this one host's CA is trusted by this one workstation [INFERENCE], because the HTTPS handshake completed. The workstation's trust store was not independently inspected; its setup was reported to include the organization's root and intermediate CAs.
 
 ### 3b. Vault/OpenBao maintainers or the deployment operator
 
@@ -78,9 +78,9 @@ Card: YubiKey 5 NFC, firmware 5.1.2, PIV slot 9A, certificate CN `example-user`,
 | 7 | Y2 | Order of `C_CloseSession`/`C_Finalize`; clean exit after login | **partial** | Failed-role run, spy-traced: two successful `C_Sign` calls, then all three sessions closed, then one `C_Finalize`. The successful login exited 0 but was **not** traced, so close order on the success path is unobserved on hardware. SoftHSM covers the success path structurally (§2, T-5), which says nothing about OpenSC. |
 | 9 | Y4 | Which `CKO_PRIVATE_KEY` objects and `CKA_ID`s are exposed; empty-`CKA_ID` matching | **partial** | Application enumeration saw `CKA_ID` `01` on the paired private key, public key and certificate, with one private-key, one public-key and one certificate match. **Not tested:** empty-`CKA_ID` matching, and every other PIV slot (the inventory was not taken). |
 | 34 | S2 | Does a `CKO_PUBLIC_KEY` object exist per slot? | **partial** | One public-key match for slot 9A's pair. Other slots not inventoried. |
-| 35 | S3 | Which key types the module reports | **partial** | An ECC P-384 key signed twice successfully through the app. Whether other types (RSA, P-256, others) are reported or usable is not tested. The brief does not state the `CKA_KEY_TYPE` value seen. |
+| 35 | S3 | Which key types the module reports | **partial** | An ECC P-384 key signed twice successfully through the app. Whether other types (RSA, P-256, others) are reported or usable is not tested. The observed `CKA_KEY_TYPE` value was not recorded. |
 | 40 | P2 | `C_Login` `ulPinLen` vs `strlen`; whitespace and NUL in a PIN | **partial** | Real card: `C_Login` succeeded with `ulPinLen=6`; an input with surrounding whitespace was trimmed to the same six bytes. SoftHSM only (not the YubiKey): a PIN with an embedded NUL reached `C_Login` as length 7 and returned `CKR_PIN_INCORRECT`. **No embedded-NUL PIN was sent to the YubiKey**, to protect its retry counter, so OpenSC's NUL handling on the card is open. |
-| 52 | H5 | Can `C_Sign` block (touch policy)? | **open** | Both `C_Sign` calls on the card completed. The brief does not say the slot has a touch policy, and no stalled-`C_Sign` case was run. The 30 s deadline and the exit-time `Context.Close` interaction remain the review's source-only argument [INFERENCE]. |
+| 52 | H5 | Can `C_Sign` block (touch policy)? | **open** | Both `C_Sign` calls on the card completed. The presence or absence of a touch policy was not recorded, and no stalled-`C_Sign` case was run. The 30 s deadline and the exit-time `Context.Close` interaction remain the review's source-only argument [INFERENCE]. |
 | 58b | V2b | Does `Close` block on a stuck `C_Sign`? | **open** | Shares the evidence package with row 52. The observed close followed completed signs only. |
 
 ### 3d. `hashicorp/vault-client-go`
