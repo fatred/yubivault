@@ -59,8 +59,8 @@ func (c *LocalVaultClient) Close() error {
 	return nil // no resources to clean up for local auth
 }
 
-// YubikeyVaultClient wraps both Vault client and crypto11.Context
-// ensuring PKCS#11 resources are properly cleaned up
+// YubikeyVaultClient wraps the Vault client and crypto11.Context
+// to close the PKCS#11 context after authentication.
 type YubikeyVaultClient struct {
 	VaultClient *vault.Client
 	cryptoCtx   *crypto11.Context // unexported, owned by this struct
@@ -352,10 +352,9 @@ func newVaultClient(addr string, cert tls.Certificate) (*vault.Client, error) {
 	return client, nil
 }
 
-// clientTLSConfig always presents cert, ignoring the CA names the server
-// advertises, as vault-client-go's own WithTLS does. With the plain
-// Certificates field, Go sends no certificate when the advertised names do not
-// include its issuer, and cert auth then fails.
+// clientTLSConfig returns cert whenever the server requests client auth, ignoring the CA names it
+// advertises. With the plain Certificates field, Go sends no certificate when the advertised names
+// do not include its issuer, and cert auth then fails.
 func clientTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
@@ -510,7 +509,7 @@ func run(args []string) error {
 	}
 	// A pre-cancelled ctx fails the login immediately; the client is still closed.
 	token, err := loginAndClose(ctx, authClient, appConfig)
-	// A signal that raced a successful login still wins: no token, exit 1.
+	// A signal observed at this check beats an otherwise successful login.
 	if cause := context.Cause(ctx); cause != nil {
 		return cause
 	}
@@ -521,8 +520,8 @@ func run(args []string) error {
 	return nil
 }
 
-// loginAndClose authenticates with authClient and always closes it, whatever
-// the outcome, so the PKCS#11 session is released before the process exits.
+// loginAndClose authenticates with authClient and always attempts to close it,
+// whatever the outcome, before returning.
 func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *AppConfig) (string, error) {
 	defer func() {
 		if cerr := authClient.Close(); cerr != nil {

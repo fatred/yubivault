@@ -66,8 +66,9 @@ ykman piv keys generate --algorithm ECCP256 --touch-policy CACHED 9a alice.pub
 
 - `ALWAYS` asks for a touch on every use of the key. `CACHED` remembers a touch for 15 seconds.
 - The touch policy is fixed when the key is generated. Changing it later means generating a new key and going through steps 2 to 4 again.
-- Creating the CSR and each yubivault login use the key. With a touch policy set, the YubiKey blinks when one of them needs a touch: always with `ALWAYS`, and with `CACHED` unless the key was touched in the last 15 seconds.
-- yubivault waits up to 10 seconds for the TLS handshake, so touch the key within 10 seconds. If you miss it, yubivault retries once and the key blinks again.
+- Creating the CSR and each yubivault login use the key. With a touch policy set, the YubiKey
+  blinks when the key is used. The exact wait timeout and retry behaviour during login depend on
+  the PKCS#11 stack; touch promptly and do not assume a fixed limit.
 
 Create the CSR. Put your name in `CN` and your team in `OU`. The YubiKey signs the CSR with the slot 9a key, so you are asked for the PIN:
 
@@ -152,7 +153,7 @@ vault write auth/cert/certs/admin \
    - Under **Constraints**, set **Allowed organizational units** to `vault-admins`.
    - Click **Save**.
 
-Cert auth needs Vault itself to terminate TLS. If a load balancer or proxy terminates TLS in front of Vault, the client certificate never reaches Vault and login fails.
+This guide assumes Vault receives yubivault's TLS connection directly. A TLS-terminating proxy means Vault does not see the original client-certificate handshake; Vault's listener has a forwarded-client-certificate option (`x_forwarded_for_client_cert_header`; not verified here), but yubivault does not set forwarded-certificate headers.
 
 ## 6. User: configure yubivault
 
@@ -176,8 +177,15 @@ yubikeyPivSerial: "<serial num from pkcs11-tool>"
 Log in:
 
 ```shell
-export VAULT_TOKEN="$(yubivault -yubi)"
-vault token lookup
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+  vault token lookup
+else
+  unset new_token
+  false
+fi
 ```
 
 `vault token lookup` should show `display_name` `cert-admin`, `policies` including `yubivault-admin`, and your CN as `common_name` under `meta`.

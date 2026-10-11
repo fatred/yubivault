@@ -1,12 +1,43 @@
 # yubivault
 
-Logs in to HashiCorp Vault or OpenBao with TLS certificate auth and prints the resulting token. The client certificate and key come either from files on disk (`-local`) or from a YubiKey's PIV applet over PKCS#11 (`-yubi`).
+Logs in to HashiCorp Vault or OpenBao with TLS **certificate** auth and prints the token. The client
+certificate and key come either from files on disk (`-local`) or from a YubiKey's PIV applet over
+OpenSC/PKCS#11 (`-yubi`). The token is the only thing written to stdout, so it can be captured
+directly:
+
+```shell
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"  # OpenBao: export BAO_TOKEN="$new_token" instead
+  unset new_token
+else
+  unset new_token
+  false
+fi
+```
+
+**Documentation: <https://fatred.github.io/yubivault/>**
+
+| | |
+|---|---|
+| [Install](https://fatred.github.io/yubivault/install/) | Release binaries, platforms, OpenSC, from source |
+| [Configuration](https://fatred.github.io/yubivault/configuration/) | Every `~/.yubivault/config.yml` field |
+| [Usage](https://fatred.github.io/yubivault/usage/) | Flags, PIN handling, stdout/stderr, proxy, timeouts, exit codes |
+| [Security](https://fatred.github.io/yubivault/security/) | What is protected, boundaries, cleanup |
+| [Troubleshooting](https://fatred.github.io/yubivault/troubleshooting/) | Common errors and fixes |
+| [PKI setup](https://fatred.github.io/yubivault/pki-setup/) | CA, YubiKey key and certificate, cert-auth role and policy |
+| [Maintainer guide](https://fatred.github.io/yubivault/maintainers/architecture/) | Architecture, development, tests, release |
+| [Agent instructions](https://fatred.github.io/yubivault/agents/) | Where the code is, invariants, verification commands |
+
+In source form the same pages are in [`docs/`](docs/index.md), and the PKI guide is
+[`docs/pki-setup.md`](docs/pki-setup.md).
 
 ## Install
 
-Download the binary for your platform from the [latest release](https://github.com/fatred/yubivault/releases/latest) and put it on your `PATH`. Supported platforms:
+Download the binary for your platform from the [latest release](https://github.com/fatred/yubivault/releases/latest).
+Supported platforms:
 
-- Linux x86-64: Debian 12 and 13, Ubuntu 24.04 and 26.04 (any distribution with glibc 2.34 or newer should work)
+- Linux x86-64: Debian 12 and 13, Ubuntu 24.04 and 26.04 (other distributions with glibc 2.34 or newer should work)
 - macOS on Apple Silicon
 
 Linux:
@@ -25,7 +56,9 @@ chmod +x yubivault
 sudo mv yubivault /usr/local/bin/
 ```
 
-The macOS binary is not notarized. Downloading it with `curl` as above avoids Gatekeeper. If you downloaded it with a browser, clear the quarantine flag first: `xattr -d com.apple.quarantine yubivault`.
+The macOS binary is not notarized. Downloading it with `curl` as above avoids Gatekeeper; if you
+downloaded it with a browser, clear the quarantine flag first:
+`xattr -d com.apple.quarantine yubivault`.
 
 For `-yubi` you also need OpenSC, which provides the PKCS#11 module:
 
@@ -34,83 +67,45 @@ brew install opensc      # macOS
 sudo apt install opensc  # Debian/Ubuntu
 ```
 
-### From source
-
-Requires Go 1.27 or newer and a C compiler (the PKCS#11 bindings use cgo):
+From source, with Go 1.27 or newer and a C compiler (the PKCS#11 bindings use cgo):
 
 ```shell
-go install github.com/fatred/yubivault@latest
+go install github.com/fatred/yubivault@main
 ```
+`@main` installs the current `main` branch; `@latest` installs the latest tagged release and may not include
+behaviour described in this documentation.
 
-## Configure
-
-Create the config directory and restrict it to your user:
+## Quick start
 
 ```shell
-mkdir -p ~/.yubivault
-chmod 700 ~/.yubivault
+mkdir -p ~/.yubivault && chmod 700 ~/.yubivault
+$EDITOR ~/.yubivault/config.yml     # see Configuration
+unset new_token
+if new_token="$(yubivault -yubi)"; then
+  export VAULT_TOKEN="$new_token"
+  unset new_token
+else
+  unset new_token
+  false
+fi
 ```
 
-Then create `~/.yubivault/config.yml`:
+Minimal `~/.yubivault/config.yml` for `-yubi`:
 
 ```yaml
-# HTTPS is required for certificate authentication.
-vaultAddr: https://vault.example.com:8200
-certAuthMount: cert           # path the cert auth method is mounted at
-certAuthName: my-role         # cert auth role to log in as
-
-# required for -local: file names inside ~/.yubivault
-certAuthPemFile: client-cert.pem
-certAuthKeyFile: client-cert.key
-
-# required for -yubi
-openscPath: /opt/homebrew/opt/opensc/lib/opensc-pkcs11.so   # macOS
-# openscPath: /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so    # Debian/Ubuntu
-yubikeyPivSerial: "1234567890123456"
-
-# optional: shown in the PIN prompt
-yubikeySerial: "12345678"
-# optional: only needed if the YubiKey holds more than one certificate;
-# set it to the Subject CN of the one to use
-# yubikeyCertCN: my-cert-cn
+vaultAddr: https://vault.example.com:8200   # HTTPS is required
+certAuthMount: cert                         # path the cert auth method is mounted at
+certAuthName: my-role                       # cert auth role to log in as
+openscPath: /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so   # Debian/Ubuntu
+yubikeyPivSerial: "1234567890123456"        # PKCS#11 token serial, not the device serial
 ```
 
-Unknown keys are rejected, so a typo fails with `field ... not found` instead of being ignored.
-
-**`-local`:** put the certificate and key in `~/.yubivault` and run `chmod 600` on the key. yubivault refuses a key that group or other can read.
-
-**`-yubi`:** `yubikeyPivSerial` is the PKCS#11 token serial, not the serial printed on the YubiKey. With the YubiKey inserted, find it with:
-
-```shell
-pkcs11-tool --module /path/to/opensc-pkcs11.so --list-slots
-```
-
-Use the `serial num` value of the slot for your YubiKey.
-
-**Vault / OpenBao:** the cert auth method must be enabled at `certAuthMount`, with a role named `certAuthName` that trusts your client certificate or its CA. [PKI-SETUP.md](PKI-SETUP.md) walks through the whole setup step by step: creating a CA with certstrap, generating the key on the YubiKey, signing and importing the certificate, and configuring the cert auth method and an admin policy.
-
-The server's TLS certificate must be trusted by the system trust store. On Linux you can point `SSL_CERT_FILE` at a CA bundle instead.
-
-## Usage
-
-```shell
-yubivault -local     # cert and key from ~/.yubivault
-yubivault -yubi      # cert and key from the YubiKey; prompts for the PIN
-yubivault -version
-```
-
-The token is the only thing written to stdout. The PIN prompt and errors go to stderr, so you can capture the token directly:
-
-```shell
-export VAULT_TOKEN="$(yubivault -yubi)"   # OpenBao: export BAO_TOKEN=...
-```
-
-- Set `TOKEN_PIN` to skip the PIN prompt in non-interactive use.
-- `HTTPS_PROXY` and `NO_PROXY` are honoured in both modes.
-- If no connection opens within 5 seconds (to Vault, or to the proxy if one is set), yubivault gives up after about 11 seconds: the connect timeout, tried twice. A refused connection fails in about a second. The error names the address it tried (`dial tcp 10.0.0.1:8200: i/o timeout`).
-- The exit status is non-zero on any failure. On Ctrl-C or SIGTERM during login, yubivault closes the YubiKey session first and then exits 1 (`interrupt signal received` / `terminated signal received`).
+For `-local`, use `certAuthPemFile` and `certAuthKeyFile` (names inside `~/.yubivault`) instead of
+the last two fields, and `chmod 600` the key. Unknown keys are rejected, so a typo fails with
+`field ... not found` instead of being ignored. Full details, including PIN, proxy, timeout and
+exit-code behaviour, are in the [documentation](https://fatred.github.io/yubivault/).
 
 ## Credits
 
-- Example of reading certificates and keys from a smartcard with crypto11: https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9
-- p11tool: https://github.com/thales-e-security/p11tool
+- Example of reading certificates and keys from a smartcard with crypto11: <https://gist.github.com/mikalv/7d966cd0e3342b067e1784ae3c5b0eb9>
+- p11tool: <https://github.com/thales-e-security/p11tool>

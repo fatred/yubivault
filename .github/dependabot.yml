@@ -20,3 +20,13 @@ updates:
     groups:
       go-modules:
         patterns: ["*"]
+
+  # MkDocs and its transitive packages, pinned with hashes in docs/requirements.txt.
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: monthly
+    labels: [dependencies]
+    groups:
+      docs-python:
+        patterns: ["*"]
