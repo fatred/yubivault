@@ -21,8 +21,7 @@ flag package with `ExitOnError`, so an unknown flag (`-foo`) exits 2 and `-h` ex
 ## Output contract
 
 - **stdout** carries the token and nothing else — one line, from `auth/token/lookup-self`.
-- **stderr** carries the PIN prompt, the warning if closing the YubiKey session fails, and every
-  error.
+- **stderr** carries the PIN prompt and every error.
 
 So the token can be captured directly:
 

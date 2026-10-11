@@ -41,13 +41,12 @@ boundaries that are deliberate.
 
 ### Cleanup
 
-- The PKCS#11 context (and with it the card's login session) is closed on every path: the
-  constructor closes it on any error, and `loginAndClose` closes the auth client after the login
-  attempt on whether it succeeded or failed. Closing happens before the process exits, so a
-  YubiKey is not left with a session held by a dead process.
-- A failure to close the session is reported on stderr (`closing auth client: ...`) and does not
-  change the exit status.
-- On SIGINT/SIGTERM during login, the signal context cancels the request and the auth client closes.
+- PKCS#11 cleanup is attempted on every path: the constructor closes a partially built context on
+  error, and `loginAndClose` calls `Close` after each login attempt.
+- `crypto11.Context.Close` ignores the `C_CloseSession` error; yubivault cannot report whether the
+  card session actually closed successfully.
+- On SIGINT/SIGTERM during login, the signal context cancels the request and `loginAndClose`
+  attempts client cleanup.
   If cancellation is observed at the final check before printing, yubivault exits 1 without a token.
   A signal arriving after that check can race with the output. After the first signal the default
   disposition is restored, so a stalled cleanup can still be killed with a second signal.

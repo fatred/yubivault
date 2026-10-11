@@ -82,9 +82,8 @@ The error body from Vault is reported as-is.
 
 | Message | Meaning |
 |---|---|
-| `interrupt signal received` | SIGINT (Ctrl-C) during a login; the session was closed, exit 1. |
-| `terminated signal received` | SIGTERM during a login; the session was closed, exit 1. |
-| `closing auth client: ...` | Closing the YubiKey session failed. After a successful login, the token is still printed and the exit status remains 0; if login already failed, the process exits 1 without printing a token. |
+| `interrupt signal received` | SIGINT (Ctrl-C) during a login; client cleanup was attempted, exit 1. |
+| `terminated signal received` | SIGTERM during a login; client cleanup was attempted, exit 1. |
 
 ## macOS
 

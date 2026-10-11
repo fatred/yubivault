@@ -50,9 +50,10 @@ Preserve these; each is relied on by tests, docs or the shell contract.
    `pathErrCause`).
 7. **The key is read before the certificate**, so a bad-permission key fails even when the
    certificate is missing.
-8. **One PKCS#11 context, closed exactly once**, on every path: the constructor's deferred error
-   guard and `loginAndClose`'s defer are mutually exclusive; `Close` must not be called twice
-   (crypto11 panics on a second close).
+8. **One PKCS#11 context; call `Close` exactly once on every path**: the constructor's deferred
+   error guard and `loginAndClose`'s defer are mutually exclusive; `Close` must not be called twice
+   (crypto11 panics on a second close). `crypto11.Context.Close` ignores `C_CloseSession` errors,
+   so this invariant is about the call, not confirmed card-session release.
 9. **The client certificate is returned whenever the server requests it**
    (`GetClientCertificate` ignores advertised CA names); `MinVersion` stays at TLS 1.2 or higher.
 10. **Transport comes from a clone of `http.DefaultTransport`** so proxy support and HTTP/2 are

@@ -59,8 +59,8 @@ func (c *LocalVaultClient) Close() error {
 	return nil // no resources to clean up for local auth
 }
 
-// YubikeyVaultClient wraps both Vault client and crypto11.Context
-// ensuring PKCS#11 resources are properly cleaned up
+// YubikeyVaultClient wraps the Vault client and crypto11.Context
+// to close the PKCS#11 context after authentication.
 type YubikeyVaultClient struct {
 	VaultClient *vault.Client
 	cryptoCtx   *crypto11.Context // unexported, owned by this struct
@@ -520,8 +520,8 @@ func run(args []string) error {
 	return nil
 }
 
-// loginAndClose authenticates with authClient and always closes it, whatever
-// the outcome, so the PKCS#11 session is released before the process exits.
+// loginAndClose authenticates with authClient and always attempts to close it,
+// whatever the outcome, before returning.
 func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *AppConfig) (string, error) {
 	defer func() {
 		if cerr := authClient.Close(); cerr != nil {
