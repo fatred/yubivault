@@ -264,7 +264,7 @@ func certCNs(pairs []tls.Certificate) string {
 // resolvePin returns $TOKEN_PIN, or prompts on prompt and reads the PIN from
 // in (os.Stdin gets no-echo terminal input; see ReadPin).
 func resolvePin(appConfig *AppConfig, in io.Reader, prompt io.Writer) (string, error) {
-	if tokenPin := os.Getenv("TOKEN_PIN"); tokenPin != "" {
+	if tokenPin := strings.TrimSpace(os.Getenv("TOKEN_PIN")); tokenPin != "" {
 		return tokenPin, nil
 	}
 	tokenPin, err := ReadPin(appConfig.YubikeySerial, in, prompt)
