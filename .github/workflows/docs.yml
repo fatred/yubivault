@@ -34,7 +34,7 @@ jobs:
           cache: pip
           cache-dependency-path: docs/requirements.txt
       - name: Install docs dependencies
-        run: pip install -r docs/requirements.txt
+        run: pip install --require-hashes -r docs/requirements.txt
       # --strict turns every MkDocs warning (broken relative link, page missing
       # from the nav) into a failure, on pull requests as well as main.
       - name: Build site (strict)
