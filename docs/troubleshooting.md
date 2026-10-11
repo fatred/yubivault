@@ -12,7 +12,7 @@ Errors go to stderr; the exit status is non-zero on any failure (see
 | `<path>: yaml: unmarshal errors: … field <name> not found in type main.AppConfig` | Unknown key: a typo, wrong case, or a retired setting (`yubikeyPivIndex`, `yubikeyPivLabel`). The actual error also includes a source line number. | Use one of the documented field names. |
 | `<path> must contain a single YAML document` | A second `---` document in the file. | Delete everything after the first document. |
 | `vaultAddr is required` | Field missing or empty. | Set it. |
-| `vaultAddr must be an absolute HTTPS URL` | `http://`, `unix://`, another scheme, no scheme (`localhost:8200`), an opaque URI, or no host (`https:///v1`). | Use `https://host[:port]`. |
+| `vaultAddr must be an absolute HTTPS URL` | Added after v1.4.2. `http://`, `unix://`, another scheme, no scheme (`localhost:8200`), an opaque URI, or no host (`https:///v1`). | Use `https://host[:port]`. |
 | `certAuthName and certAuthMount are required` | One of the two is empty. | Set both. |
 | `certAuthPemFile and certAuthKeyFile are required for -local` | `-local` without file names. | Add both fields, or use `-yubi`. |
 | `openscPath and yubikeyPivSerial are required for -yubi` | `-yubi` without the module path or token serial. | Add both fields, or use `-local`. |
@@ -74,8 +74,8 @@ The error body from Vault is reported as-is.
 | `failed to match all constraints for this login certificate` (HTTP 400) | In the tested deployment, a deliberately nonexistent role returned this message. Other certificate, role, or trust failures may produce different responses. | Check `certAuthName`/`certAuthMount` and compare the certificate with the server's configured role constraints. |
 | `permission denied` (HTTP 403) | The login worked but the token lacks access to `auth/token/lookup-self`, or the token was revoked between the two calls. | Check the role's `token_policies`; a policy that grants nothing on `auth/token/lookup-self` breaks the lookup step. |
 | `client_token not found or empty` or `auth field not found in response` | The login response did not provide a usable token. MFA or response wrapping may affect the response, but compatibility depends on the Vault/OpenBao deployment and is not established here. | Check the server's login response and configuration; yubivault requires `auth.client_token`. |
-| `cert login response not found`, `token lookup-self response not found` | The server returned 200 with an empty body. | Check for an interposing proxy that rewrites responses, and the server version. |
-| `token id not found or not a string`, `token id is empty` | The lookup response did not contain a usable non-empty string `id`. | Check the server response and whether the token remained valid during lookup; the message alone does not identify the cause. |
+| `cert login response not found`, `token lookup-self response not found` | Added after v1.4.2. The server returned 200 with an empty body. | Check for an interposing proxy that rewrites responses, and the server version. |
+| `token id not found or not a string`, `token id is empty` | Added after v1.4.2. The lookup response did not contain a usable non-empty string `id`. | Check the server response and whether the token remained valid during lookup; the message alone does not identify the cause. |
 
 ## Signals
 

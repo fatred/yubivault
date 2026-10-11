@@ -40,11 +40,12 @@ so the download is trusted on the strength of GitHub and TLS alone.
 
 ## Behaviour on `main`
 
-These pages describe `main`. The latest release (v1.4.2) does not yet include three documented
-behaviours: `vaultAddr` must be an HTTPS URL (v1.4.2 accepts `http://`), `TOKEN_PIN` is trimmed of
-surrounding whitespace, and an empty login or lookup response and an empty token `id` fail with an
-explicit error (`cert login response not found`, `token lookup-self response not found`,
-`token id is empty`). Install from source (`go install`) to get them before the next release.
+These pages describe `main`. The following behaviours were added after v1.4.2 and may be absent
+from a release binary until included in a later release: `vaultAddr` must be an HTTPS URL,
+`TOKEN_PIN` is trimmed of surrounding whitespace, and empty login or lookup responses and an empty
+token `id` fail with explicit errors (`cert login response not found`,
+`token lookup-self response not found`, `token id is empty`). Check the release notes for the binary
+you are running. Remove this note once these behaviours are included in a release.
 
 ## OpenSC (required for `-yubi`)
 

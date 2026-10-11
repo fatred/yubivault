@@ -52,11 +52,12 @@ profile) so that the Vault CLI, which does read it, talks to the same server.
 To keep a PIN out of shell history, and give it only to the yubivault process rather than to every command:
 
 ```shell
-printf 'YubiKey PIN: ' >&2
-read -rs TOKEN_PIN
-printf '\n' >&2
-VAULT_TOKEN="$(TOKEN_PIN="$TOKEN_PIN" yubivault -yubi)" && export VAULT_TOKEN
 unset TOKEN_PIN
+printf 'YubiKey PIN: ' >&2
+read -rs pin
+printf '\n' >&2
+VAULT_TOKEN="$(TOKEN_PIN="$pin" yubivault -yubi)" && export VAULT_TOKEN
+unset pin
 ```
 
 `TOKEN_PIN` is visible in the environment of the yubivault process (and to other processes of the
@@ -109,6 +110,7 @@ still be interrupted by a second signal.
 
 At the PIN prompt there is no handler yet, so Ctrl-C kills the process the usual way (the shell
 reports 130).
+If the terminal stays silent afterward, run `stty sane` to restore terminal settings.
 
 ## Token lifetime
 
