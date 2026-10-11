@@ -212,13 +212,16 @@ func TestLoadConfig_RejectsNonHTTPSVaultAddr(t *testing.T) {
 		{"opaque https URI", "https:localhost:8200"},
 		{"missing host", "https:///v1"},
 		{"invalid port", "https://localhost:bad"},
+		{"hostless port", "https://:8200"},
+		{"userinfo in malformed URL", "https://user:secret@localhost:bad"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			content := strings.Replace(base, "https://localhost:8200", tt.addr, 1)
 			_, err := LoadConfig(writeConfig(t, content))
-			if err == nil || !strings.Contains(err.Error(), "vaultAddr must be an absolute HTTPS URL") {
-				t.Errorf("expected HTTPS-only validation error, got %v", err)
+			const want = "vaultAddr must be an absolute HTTPS URL"
+			if err == nil || err.Error() != want {
+				t.Errorf("LoadConfig() error = %v, want %q", err, want)
 			}
 		})
 	}

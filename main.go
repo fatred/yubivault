@@ -131,7 +131,7 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	}
 	vaultURL, err := url.Parse(appConfig.VaultAddr)
 	if err != nil {
-		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL: %w", err)
+		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL")
 	}
 	if !strings.EqualFold(vaultURL.Scheme, "https") || vaultURL.Opaque != "" || vaultURL.Hostname() == "" {
 		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL")
