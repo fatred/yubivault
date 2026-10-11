@@ -95,7 +95,7 @@ Both modes share one HTTP transport:
 | Retries | One, after a 1–1.5 second backoff — two attempts per request. Retried: connection errors and the library's retryable statuses (5xx except 501, 429, 412). |
 | Redirects | `vault-client-go` follows at most one 301, 302 or 307; HTTPS-to-non-HTTPS redirects are refused. |
 | Proxy | Honoured from the environment: `HTTPS_PROXY`/`https_proxy`, `HTTP_PROXY` and `NO_PROXY`/`no_proxy`. |
-| TLS | Server verified against the system trust store; minimum TLS 1.2. On Linux, `SSL_CERT_FILE`/`SSL_CERT_DIR` can point at a CA bundle instead; on macOS, add the CA to the keychain. |
+| TLS | Server verified against the system trust store; minimum TLS 1.2. Linux honors `SSL_CERT_FILE`/`SSL_CERT_DIR`. Go 1.27+ macOS release binaries honor them too, using those roots instead of Keychain unless `GODEBUG=x509sslcertoverrideplatform=0`; otherwise add the CA to Keychain. |
 | Client certificate | Presented whenever the server asks, regardless of which CA names it advertises. For `-yubi` the leaf certificate only is sent; make sure the cert-auth role trusts the issuing CA. |
 
 What a failure looks like, in wall-clock terms:
@@ -117,11 +117,10 @@ meaning.
 | 1 | Any failure, including a login cancelled by a signal |
 | 2 | Flag parsing error (for example an unknown flag) |
 
-During or after a login, SIGINT and SIGTERM do not kill the process immediately: they cancel the
-login, yubivault closes the YubiKey session, and it exits 1 with `interrupt signal received` or
-`terminated signal received`. A signal that races a successful login still wins — no token is
-printed. After the first signal, the default action is restored, so a cleanup that stalls can
-still be interrupted by a second signal.
+After login, yubivault checks whether signal cancellation has been observed before printing. If it
+has, it exits 1 without a token; a signal arriving after that final check can race with output.
+After the first signal, the default action is restored, so a cleanup that stalls can still be
+interrupted by a second signal.
 
 At the PIN prompt there is no handler yet, so Ctrl-C kills the process the usual way (the shell
 reports 130).

@@ -60,7 +60,7 @@ any other PIN verification consume an attempt when the PIN is wrong.
 |---|---|---|
 | `dial tcp <addr>: connection refused` | Nothing is listening at that address and port (wrong port, server down, firewall rejecting). | Check `vaultAddr` and that Vault is up. |
 | `dial tcp <addr>: i/o timeout` | The address is blackholed or filtered; the message appears after roughly 11 seconds (a 5-second connect timeout, a retry, and the backoff). | Check routing, firewall and the proxy settings. |
-| `x509: certificate signed by unknown authority` | The server's certificate chain is not in the system trust store. | Install the CA in the system store. On Linux you can instead point `SSL_CERT_FILE` at the CA bundle; on macOS add the CA to the keychain. |
+| `x509: certificate signed by unknown authority` | The server's certificate chain is not in the system trust store. | Install the CA in the system store. Linux honors `SSL_CERT_FILE`/`SSL_CERT_DIR`; Go 1.27+ macOS release binaries honor them too and use those roots instead of Keychain unless `GODEBUG=x509sslcertoverrideplatform=0`. Otherwise, add the CA to Keychain. |
 | `x509: certificate is valid for X, not Y` | `vaultAddr`'s host name does not match the server certificate. | Use the name the certificate was issued for. |
 | TLS handshake failure through a TLS-terminating proxy | Vault does not see yubivault's original client-certificate handshake. Vault's listener has a forwarded-client-certificate option (not verified here), but yubivault does not set forwarded-certificate headers. | Check the Vault listener and proxy configuration. This guide assumes Vault receives the TLS connection directly. |
 | Timeout only when `HTTPS_PROXY` is set | The proxy cannot reach Vault, or it blocks the CONNECT. | Unset the proxy, or fix the proxy; use `NO_PROXY` for the Vault host. |
@@ -71,7 +71,7 @@ The error body from Vault is reported as-is.
 
 | Message | Cause | Fix |
 |---|---|---|
-| `failed to match all constraints for this login certificate` (HTTP 400) | In the tested deployment, a deliberately nonexistent role returned this message. Other certificate, role, or trust failures may produce different responses. | Check `certAuthName`/`certAuthMount` and compare the certificate with the server's configured role constraints. |
+| `failed to match all constraints for this login certificate` (HTTP 400) | Vault/OpenBao rejected the certificate against its auth constraints. Exact status and message can vary by deployment. | Check `certAuthName`/`certAuthMount` and compare the certificate with the server's configured role constraints. |
 | `permission denied` (HTTP 403) | The login worked but the token lacks access to `auth/token/lookup-self`, or the token was revoked between the two calls. | Check the role's `token_policies`; a policy that grants nothing on `auth/token/lookup-self` breaks the lookup step. |
 | `client_token not found or empty` or `auth field not found in response` | The login response did not provide a usable token. MFA or response wrapping may affect the response, but compatibility depends on the Vault/OpenBao deployment and is not established here. | Check the server's login response and configuration; yubivault requires `auth.client_token`. |
 | `cert login response not found`, `token lookup-self response not found` | Added after v1.4.2. The server returned 200 with an empty body. | Check for an interposing proxy that rewrites responses, and the server version. |

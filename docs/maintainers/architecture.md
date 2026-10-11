@@ -50,8 +50,9 @@ PKCS#11 close) completes before the process exits.
   30-second client timeout, and returns 3xx responses to `vault-client-go`, which follows at most one 301/302/307 redirect and refuses HTTPS-to-non-HTTPS downgrades.
 - Retries are `RetryMax: 1` with a 1–1.5 second backoff. The library default of two retries stacked
   on connect timeouts is what made an unreachable Vault appear to hang for a minute.
-- The server is verified against the system trust store only; on Linux, `SSL_CERT_FILE`/`SSL_CERT_DIR`
-  are the documented escape hatch (macOS ignores them). There is no pinning and no way to skip verification.
+- The server is verified against system trust by default. Linux honors `SSL_CERT_FILE`/`SSL_CERT_DIR`;
+  the Go 1.27+ macOS release builds honor them too, using those roots instead of Keychain unless
+  `GODEBUG=x509sslcertoverrideplatform=0`. There is no pinning or way to skip verification.
 
 ## Repository map
 

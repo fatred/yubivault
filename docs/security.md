@@ -47,17 +47,17 @@ boundaries that are deliberate.
   YubiKey is not left with a session held by a dead process.
 - A failure to close the session is reported on stderr (`closing auth client: ...`) and does not
   change the exit status.
-- On SIGINT/SIGTERM during a login, yubivault cancels the login, closes the session, and exits 1.
-  After the first signal the default disposition is restored, so a stalled cleanup can still be
-  killed with a second signal; the trade-off is that a signal arriving microseconds after the
-  first is absorbed.
+- On SIGINT/SIGTERM during login, the signal context cancels the request and the auth client closes.
+  If cancellation is observed at the final check before printing, yubivault exits 1 without a token.
+  A signal arriving after that check can race with the output. After the first signal the default
+  disposition is restored, so a stalled cleanup can still be killed with a second signal.
 
 ## Trust boundaries
 
 | Component | How it is trusted |
 |---|---|
 | The invoking user, `~/.yubivault`, `config.yml` | Trusted. The config is operator-controlled; its own permissions are not checked. |
-| The Vault/OpenBao server and any redirect target | Authenticated by TLS using the system trust store; there is no certificate pinning or way to disable verification. On Linux, `SSL_CERT_FILE`/`SSL_CERT_DIR` can redirect the trust store. `vault-client-go` follows at most one 301/302/307 to an HTTPS target; on `lookup-self` the request's `X-Vault-Token` is retained and the client certificate may be presented to that target. Trust the endpoint and any redirect destination. |
+| The Vault/OpenBao server and any redirect target | Authenticated by TLS using the system trust store; there is no certificate pinning or way to disable verification. Go 1.27+ honors `SSL_CERT_FILE`/`SSL_CERT_DIR`; on macOS they replace Keychain trust by default unless `GODEBUG=x509sslcertoverrideplatform=0`. `vault-client-go` follows at most one 301/302/307 to an HTTPS target; on `lookup-self` the request's `X-Vault-Token` is retained and the client certificate may be presented to that target. Trust the endpoint and any redirect destination. |
 | The PKCS#11 module (`openscPath`) | Loaded with `dlopen` into the yubivault process and given the PIN. A config that names an untrusted module means running untrusted native code with the PIN. |
 | Environment (`TOKEN_PIN`, proxy variables, `SSL_CERT_FILE`, `HOME`) | Caller-controlled. Proxy variables redirect where the Vault request goes (a proxy sees the TLS session, not the plaintext). |
 | The shell reading stdout | Trusted by design: stdout carries only the token. |

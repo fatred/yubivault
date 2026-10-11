@@ -31,7 +31,7 @@ The PIN prompt, warnings and errors all go to stderr, which keeps that capture c
 3. It opens a TLS connection to `vaultAddr`, presenting the client certificate, and posts
    `{"name": "<certAuthName>"}` to `/v1/auth/<certAuthMount>/login`.
 4. The server evaluates the certificate against its cert-auth configuration and, if accepted, returns a login response.
-5. yubivault uses `auth.client_token` for `auth/token/lookup-self` and prints the response's `data.id`. The successful test deployment accepted the printed value as a token; equality between `data.id` and `auth.client_token` has not been established across deployments.
+5. yubivault sends `auth.client_token` to `auth/token/lookup-self` and prints the response's `data.id`.
 
 Because the authorisation decision is made from the certificate at login, adding or removing a
 person is a PKI operation, not a Vault configuration change: see
