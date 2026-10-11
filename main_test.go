@@ -365,6 +365,42 @@ func TestReadPin_Mock(t *testing.T) {
 	}
 }
 
+func TestReadPin_TerminalBranch(t *testing.T) {
+	const helperEnv = "YUBIVAULT_READPIN_TERMINAL_HELPER"
+	if os.Getenv(helperEnv) == "1" {
+		_, err := resolvePin(&AppConfig{YubikeySerial: "1234567"}, os.Stdin, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	stdin, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestReadPin_TerminalBranch$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1", "TOKEN_PIN=")
+	cmd.Stdin = stdin
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("exit = %v, want 1; stderr: %q", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if got, want := stderr.String(), "PIN for 1234567: \ncould not read PIN code: inappropriate ioctl for device\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
 // captureStdout runs fn with os.Stdout redirected and returns fn's result and
 // whatever it printed to stdout.
 func captureStdout(t *testing.T, fn func() (string, error)) (string, string) {
