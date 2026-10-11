@@ -88,7 +88,6 @@ func TestCreateYubikeyVaultClient_SoftHSM(t *testing.T) {
 		childEnv+"="+helperToken,
 		"YUBIVAULT_SOFTHSM_MODULE="+module,
 		"YUBIVAULT_SOFTHSM_SERIAL="+serial,
-		"SOFTHSM2_CONF="+confPath,
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
