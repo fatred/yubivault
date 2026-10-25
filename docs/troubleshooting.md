@@ -56,6 +56,8 @@ any other PIN verification consume an attempt when the PIN is wrong.
 
 ## Connecting to Vault
 
+These messages appear after the step prefix, for example `cert login: Post "<url>": dial tcp ...`.
+
 | Message | Cause | Fix |
 |---|---|---|
 | `dial tcp <addr>: connection refused` | Nothing is listening at that address and port (wrong port, server down, firewall rejecting). | Check `vaultAddr` and that Vault is up. |
@@ -67,8 +69,9 @@ any other PIN verification consume an attempt when the PIN is wrong.
 
 ## Vault rejecting the login
 
-Vault and transport errors are prefixed with the step that failed (`cert login: ` or
-`token lookup-self: `), followed by the error from Vault as-is.
+Login errors are prefixed with the step that failed (`cert login: `, `set token: ` or
+`token lookup-self: `), followed by the underlying error: Vault's response body, or the
+transport error (`dial tcp ...`, `x509: ...`) shown in the table above.
 
 | Message | Cause | Fix |
 |---|---|---|
