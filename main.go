@@ -278,7 +278,6 @@ func resolvePin(appConfig *AppConfig, in io.Reader, prompt io.Writer) (string, e
 	return tokenPin, nil
 }
 
-// The returned error includes any failure to close the PKCS#11 context.
 func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (_ *YubikeyVaultClient, err error) {
 	cryptoCtx, err := crypto11.Configure(&crypto11.Config{
 		Path:        appConfig.OpenScPath,
@@ -291,13 +290,11 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (_ *Yubikey
 
 	// CRITICAL: Deferred cleanup ensures crypto11.Context is closed on ANY error path.
 	// On success, the context is transferred to YubikeyVaultClient which owns it.
-	// This prevents resource leaks that can lock the YubiKey. err is the named
-	// result, so every return below is seen here.
+	// This prevents resource leaks that can lock the YubiKey. Close's error is
+	// not returned: crypto11 v1.6.8 always returns nil from it.
 	defer func() {
 		if err != nil {
-			if cerr := cryptoCtx.Close(); cerr != nil {
-				err = errors.Join(err, cerr)
-			}
+			cryptoCtx.Close()
 		}
 	}()
 

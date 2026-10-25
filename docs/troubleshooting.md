@@ -67,12 +67,13 @@ any other PIN verification consume an attempt when the PIN is wrong.
 
 ## Vault rejecting the login
 
-The error body from Vault is reported as-is.
+Vault and transport errors are prefixed with the step that failed (`cert login: ` or
+`token lookup-self: `), followed by the error from Vault as-is.
 
 | Message | Cause | Fix |
 |---|---|---|
-| `failed to match all constraints for this login certificate` (HTTP 400) | Vault/OpenBao rejected the certificate against its auth constraints. Exact status and message can vary by deployment. | Check `certAuthName`/`certAuthMount` and compare the certificate with the server's configured role constraints. |
-| `permission denied` (HTTP 403) | The login worked but the token lacks access to `auth/token/lookup-self`, or the token was revoked between the two calls. | Check the role's `token_policies`; a policy that grants nothing on `auth/token/lookup-self` breaks the lookup step. |
+| `cert login: ... failed to match all constraints for this login certificate` (HTTP 400) | Vault/OpenBao rejected the certificate against its auth constraints. Exact status and message can vary by deployment. | Check `certAuthName`/`certAuthMount` and compare the certificate with the server's configured role constraints. |
+| `token lookup-self: ... permission denied` (HTTP 403) | The login worked but the token lacks access to `auth/token/lookup-self`, or the token was revoked between the two calls. | Check the role's `token_policies`; a policy that grants nothing on `auth/token/lookup-self` breaks the lookup step. |
 | `client_token not found or empty` or `auth field not found in response` | The login response did not provide a usable token. MFA or response wrapping may affect the response, but compatibility depends on the Vault/OpenBao deployment and is not established here. | Check the server's login response and configuration; yubivault requires `auth.client_token`. |
 | `cert login response not found`, `token lookup-self response not found` | Added after v1.4.2. The server returned 200 with an empty body. | Check for an interposing proxy that rewrites responses, and the server version. |
 | `token id not found or not a string` | The lookup response did not contain a string `id`; this error also existed in v1.4.2. | Check the server response. |
