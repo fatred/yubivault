@@ -15,7 +15,7 @@ yubivault -version   # print the version and exit
 | `-version` | Print the version and exit 0. Standalone: it ignores `-local`/`-yubi` and never reads the config or the card. |
 
 Exactly one of `-local` and `-yubi` is required for a login; passing both or neither fails with
-`Pick -local or -yubi`. Positional arguments are ignored. Flag parsing uses the standard library
+`pick -local or -yubi`. Positional arguments are ignored. Flag parsing uses the standard library
 flag package with `ExitOnError`, so an unknown flag (`-foo`) exits 2 and `-h` exits 0.
 
 ## Output contract

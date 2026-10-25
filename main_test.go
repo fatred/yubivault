@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/hashicorp/vault-client-go"
@@ -28,34 +29,34 @@ import (
 )
 
 type MockVaultClient struct {
-	CertLoginResp       *vault.Response[map[string]interface{}]
+	CertLoginResp       *vault.Response[map[string]any]
 	CertLoginErr        error
 	SetTokenErr         error
-	TokenLookUpSelfResp *vault.Response[map[string]interface{}]
+	TokenLookUpSelfResp *vault.Response[map[string]any]
 	TokenLookUpSelfErr  error
 }
 
-func (m *MockVaultClient) CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error) {
+func (m *MockVaultClient) CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]any], error) {
 	return m.CertLoginResp, m.CertLoginErr
 }
 func (m *MockVaultClient) SetToken(token string) error {
 	return m.SetTokenErr
 }
-func (m *MockVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]interface{}], error) {
+func (m *MockVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]any], error) {
 	return m.TokenLookUpSelfResp, m.TokenLookUpSelfErr
 }
 
 func TestAuthenticateAndGetToken_Success(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
 		},
-		TokenLookUpSelfResp: &vault.Response[map[string]interface{}]{
-			Data: map[string]interface{}{"id": "my-id"},
+		TokenLookUpSelfResp: &vault.Response[map[string]any]{
+			Data: map[string]any{"id": "my-id"},
 		},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	id, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	id, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestAuthenticateAndGetToken_Success(t *testing.T) {
 func TestAuthenticateAndGetToken_NilCertLoginResponse(t *testing.T) {
 	mock := &MockVaultClient{}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "cert login response not found") {
 		t.Errorf("expected cert login response error, got %v", err)
 	}
@@ -75,12 +76,12 @@ func TestAuthenticateAndGetToken_NilCertLoginResponse(t *testing.T) {
 
 func TestAuthenticateAndGetToken_NilTokenLookUpSelfResponse(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
 		},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "token lookup-self response not found") {
 		t.Errorf("expected lookup-self response error, got %v", err)
 	}
@@ -88,15 +89,15 @@ func TestAuthenticateAndGetToken_NilTokenLookUpSelfResponse(t *testing.T) {
 
 func TestAuthenticateAndGetToken_EmptyID(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
 		},
-		TokenLookUpSelfResp: &vault.Response[map[string]interface{}]{
-			Data: map[string]interface{}{"id": ""},
+		TokenLookUpSelfResp: &vault.Response[map[string]any]{
+			Data: map[string]any{"id": ""},
 		},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "token id is empty") {
 		t.Errorf("expected empty token id error, got %v", err)
 	}
@@ -104,10 +105,10 @@ func TestAuthenticateAndGetToken_EmptyID(t *testing.T) {
 
 func TestAuthenticateAndGetToken_NoAuth(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{Auth: nil},
+		CertLoginResp: &vault.Response[map[string]any]{Auth: nil},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "auth field not found") {
 		t.Errorf("expected auth field error, got %v", err)
 	}
@@ -115,12 +116,12 @@ func TestAuthenticateAndGetToken_NoAuth(t *testing.T) {
 
 func TestAuthenticateAndGetToken_EmptyToken(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: ""},
 		},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "client_token not found") {
 		t.Errorf("expected client_token error, got %v", err)
 	}
@@ -128,13 +129,13 @@ func TestAuthenticateAndGetToken_EmptyToken(t *testing.T) {
 
 func TestAuthenticateAndGetToken_TokenLookUpSelfError(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
 		},
 		TokenLookUpSelfErr: fmt.Errorf("lookup error"),
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "lookup error") {
 		t.Errorf("expected lookup error, got %v", err)
 	}
@@ -142,15 +143,15 @@ func TestAuthenticateAndGetToken_TokenLookUpSelfError(t *testing.T) {
 
 func TestAuthenticateAndGetToken_NoID(t *testing.T) {
 	mock := &MockVaultClient{
-		CertLoginResp: &vault.Response[map[string]interface{}]{
+		CertLoginResp: &vault.Response[map[string]any]{
 			Auth: &vault.ResponseAuth{ClientToken: "test-token"},
 		},
-		TokenLookUpSelfResp: &vault.Response[map[string]interface{}]{
-			Data: map[string]interface{}{},
+		TokenLookUpSelfResp: &vault.Response[map[string]any]{
+			Data: map[string]any{},
 		},
 	}
 	appConfig := &AppConfig{CertAuthName: "foo", CertAuthMount: "bar"}
-	_, err := AuthenticateAndGetToken(mock, appConfig, nil)
+	_, err := AuthenticateAndGetToken(context.Background(), mock, appConfig)
 	if err == nil || !strings.Contains(err.Error(), "token id not found") {
 		t.Errorf("expected token id error, got %v", err)
 	}
@@ -422,6 +423,15 @@ func TestReadPin_Mock(t *testing.T) {
 	}
 }
 
+// A reader that returns one byte per Read must not truncate the PIN.
+func TestReadPin_ShortReads(t *testing.T) {
+	const want = "1234567890123456789012345678901234567890123456789012345678901234567890"
+	pin, err := ReadPin("1234567", iotest.OneByteReader(strings.NewReader(want+"\n")), io.Discard)
+	if err != nil || pin != want {
+		t.Errorf("ReadPin = %q, %v; want %q", pin, err, want)
+	}
+}
+
 func TestReadPin_TerminalBranch(t *testing.T) {
 	const helperEnv = "YUBIVAULT_READPIN_TERMINAL_HELPER"
 	if token := os.Getenv(helperEnv); token != "" && os.Args[len(os.Args)-1] == token {
@@ -447,8 +457,8 @@ func TestReadPin_TerminalBranch(t *testing.T) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok || exitErr.ExitCode() != 1 {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("exit = %v, want 1; stderr: %q", err, stderr.String())
 	}
 	if stdout.Len() != 0 {

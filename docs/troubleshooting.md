@@ -16,7 +16,7 @@ Errors go to stderr; the exit status is non-zero on any failure (see
 | `certAuthName and certAuthMount are required` | One of the two is empty. | Set both. |
 | `certAuthPemFile and certAuthKeyFile are required for -local` | `-local` without file names. | Add both fields, or use `-yubi`. |
 | `openscPath and yubikeyPivSerial are required for -yubi` | `-yubi` without the module path or token serial. | Add both fields, or use `-local`. |
-| `Pick -local or -yubi` | Both flags, or neither. | Pass exactly one. |
+| `pick -local or -yubi` | Both flags, or neither. | Pass exactly one. |
 
 ## `-local`
 

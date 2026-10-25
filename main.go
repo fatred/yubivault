@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -78,22 +79,22 @@ func (c *YubikeyVaultClient) Close() error {
 }
 
 type VaultClient interface {
-	CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error)
+	CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]any], error)
 	SetToken(token string) error
-	TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]interface{}], error)
+	TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]any], error)
 }
 
 type RealVaultClient struct {
 	Client *vault.Client
 }
 
-func (c *RealVaultClient) CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]interface{}], error) {
+func (c *RealVaultClient) CertLogin(ctx context.Context, req schema.CertLoginRequest, opts ...vault.RequestOption) (*vault.Response[map[string]any], error) {
 	return c.Client.Auth.CertLogin(ctx, req, opts...)
 }
 func (c *RealVaultClient) SetToken(token string) error {
 	return c.Client.SetToken(token)
 }
-func (c *RealVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]interface{}], error) {
+func (c *RealVaultClient) TokenLookUpSelf(ctx context.Context) (*vault.Response[map[string]any], error) {
 	return c.Client.Auth.TokenLookUpSelf(ctx)
 }
 
@@ -129,19 +130,16 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 	// TLS is required for certificate authentication; accept only absolute
 	// HTTPS URLs.
 	if appConfig.VaultAddr == "" {
-		return nil, fmt.Errorf("vaultAddr is required")
+		return nil, errors.New("vaultAddr is required")
 	}
 	vaultURL, err := url.Parse(appConfig.VaultAddr)
-	if err != nil {
-		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL")
-	}
-	if !strings.EqualFold(vaultURL.Scheme, "https") || vaultURL.Opaque != "" || vaultURL.Hostname() == "" {
-		return nil, fmt.Errorf("vaultAddr must be an absolute HTTPS URL")
+	if err != nil || !strings.EqualFold(vaultURL.Scheme, "https") || vaultURL.Opaque != "" || vaultURL.Hostname() == "" {
+		return nil, errors.New("vaultAddr must be an absolute HTTPS URL")
 	}
 	vaultURL.Scheme = "https"
 	appConfig.VaultAddr = vaultURL.String()
 	if appConfig.CertAuthName == "" || appConfig.CertAuthMount == "" {
-		return nil, fmt.Errorf("certAuthName and certAuthMount are required")
+		return nil, errors.New("certAuthName and certAuthMount are required")
 	}
 	return appConfig, nil
 }
@@ -152,12 +150,12 @@ func LoadConfig(homeDir string) (*AppConfig, error) {
 func (c *AppConfig) requireForMode(local bool) error {
 	if local {
 		if c.CertAuthPemFile == "" || c.CertAuthKeyFile == "" {
-			return fmt.Errorf("certAuthPemFile and certAuthKeyFile are required for -local")
+			return errors.New("certAuthPemFile and certAuthKeyFile are required for -local")
 		}
 		return nil
 	}
 	if c.OpenScPath == "" || c.YubikeyPivSerial == "" {
-		return fmt.Errorf("openscPath and yubikeyPivSerial are required for -yubi")
+		return errors.New("openscPath and yubikeyPivSerial are required for -yubi")
 	}
 	return nil
 }
@@ -226,7 +224,7 @@ func pathErrCause(err error) error {
 // on the parsed x509 cert (reliable), never on PKCS#11 labels.
 func selectCertificate(pairs []tls.Certificate, wantCN string) (tls.Certificate, error) {
 	if len(pairs) == 0 {
-		return tls.Certificate{}, fmt.Errorf("no paired credentials found on YubiKey")
+		return tls.Certificate{}, errors.New("no paired credentials found on YubiKey")
 	}
 	if wantCN == "" {
 		if len(pairs) == 1 {
@@ -273,18 +271,16 @@ func resolvePin(appConfig *AppConfig, in io.Reader, prompt io.Writer) (string, e
 	if err != nil {
 		return "", fmt.Errorf("could not read PIN code: %w", err)
 	}
-	tokenPin = strings.TrimSpace(tokenPin)
+	// ReadPin already trims.
 	if tokenPin == "" {
-		return "", fmt.Errorf("need to enter PIN or set via $TOKEN_PIN")
+		return "", errors.New("need to enter PIN or set via $TOKEN_PIN")
 	}
 	return tokenPin, nil
 }
 
-func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVaultClient, error) {
-	var err error
-	var cryptoCtx *crypto11.Context
-
-	cryptoCtx, err = crypto11.Configure(&crypto11.Config{
+// The returned error includes any failure to close the PKCS#11 context.
+func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (_ *YubikeyVaultClient, err error) {
+	cryptoCtx, err := crypto11.Configure(&crypto11.Config{
 		Path:        appConfig.OpenScPath,
 		TokenSerial: appConfig.YubikeyPivSerial,
 		Pin:         tokenPin,
@@ -295,10 +291,13 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (*YubikeyVa
 
 	// CRITICAL: Deferred cleanup ensures crypto11.Context is closed on ANY error path.
 	// On success, the context is transferred to YubikeyVaultClient which owns it.
-	// This prevents resource leaks that can lock the YubiKey.
+	// This prevents resource leaks that can lock the YubiKey. err is the named
+	// result, so every return below is seen here.
 	defer func() {
-		if err != nil && cryptoCtx != nil {
-			cryptoCtx.Close()
+		if err != nil {
+			if cerr := cryptoCtx.Close(); cerr != nil {
+				err = errors.Join(err, cerr)
+			}
 		}
 	}()
 
@@ -387,58 +386,59 @@ func newHTTPClient(tlsConfig *tls.Config) *http.Client {
 func ReadPin(yubikeySerial string, r io.Reader, w io.Writer) (string, error) {
 	fmt.Fprint(w, "PIN for "+yubikeySerial+": ")
 	if r == os.Stdin {
-		bPin, err := term.ReadPassword(int(syscall.Stdin))
+		bPin, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(w)
 		if err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(string(bPin)), nil
 	}
-	bPin := make([]byte, 64)
-	n, err := r.Read(bPin)
+	// ReadString loops until a newline, so a short read cannot truncate the PIN.
+	line, err := bufio.NewReader(r).ReadString('\n')
 	fmt.Fprintln(w)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
-	return strings.TrimSpace(string(bPin[:n])), nil
+	return strings.TrimSpace(line), nil
 }
 
-func AuthenticateAndGetToken(client VaultClient, appConfig *AppConfig, ctx context.Context) (string, error) {
+func AuthenticateAndGetToken(ctx context.Context, client VaultClient, appConfig *AppConfig) (string, error) {
 	resp, err := client.CertLogin(ctx, schema.CertLoginRequest{Name: appConfig.CertAuthName}, vault.WithMountPath(appConfig.CertAuthMount))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("cert login: %w", err)
 	}
 	if resp == nil {
-		return "", fmt.Errorf("cert login response not found")
+		return "", errors.New("cert login response not found")
 	}
 	if resp.Auth == nil {
-		return "", fmt.Errorf("auth field not found in response")
+		return "", errors.New("auth field not found in response")
 	}
 	clientToken := resp.Auth.ClientToken
 	if clientToken == "" {
-		return "", fmt.Errorf("client_token not found or empty")
+		return "", errors.New("client_token not found or empty")
 	}
 	if err := client.SetToken(clientToken); err != nil {
-		return "", err
+		return "", fmt.Errorf("set token: %w", err)
 	}
 	tokenResp, err := client.TokenLookUpSelf(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("token lookup-self: %w", err)
 	}
 	if tokenResp == nil {
-		return "", fmt.Errorf("token lookup-self response not found")
+		return "", errors.New("token lookup-self response not found")
 	}
 	id, ok := tokenResp.Data["id"].(string)
 	if !ok {
-		return "", fmt.Errorf("token id not found or not a string")
+		return "", errors.New("token id not found or not a string")
 	}
 	if id == "" {
-		return "", fmt.Errorf("token id is empty")
+		return "", errors.New("token id is empty")
 	}
 	return id, nil
 }
 
 func main() {
+	log.SetFlags(0) // a CLI error needs no timestamp
 	if err := run(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
@@ -448,11 +448,11 @@ func main() {
 // crypto11/PKCS#11 context) runs on every error path; log.Fatal in main only
 // executes after run has returned and its defers have completed.
 func run(args []string) error {
-	fs := flag.NewFlagSet("yubivault", flag.ExitOnError)
-	localFlag := fs.Bool("local", false, "Use cert and key found in ~/.yubivault/client-cert.pem|key")
-	yubikeyFlag := fs.Bool("yubi", false, "User cert and key stored in a yubikey only")
-	versionFlag := fs.Bool("version", false, "Show version")
-	fs.Parse(args)
+	flags := flag.NewFlagSet("yubivault", flag.ExitOnError)
+	localFlag := flags.Bool("local", false, "Use the client cert and key files named in ~/.yubivault/config.yml")
+	yubikeyFlag := flags.Bool("yubi", false, "Use the cert and key stored on a YubiKey only")
+	versionFlag := flags.Bool("version", false, "Show version")
+	flags.Parse(args) // ExitOnError: Parse never returns an error
 
 	if *versionFlag {
 		fmt.Println(Version)
@@ -460,7 +460,7 @@ func run(args []string) error {
 	}
 
 	if *localFlag == *yubikeyFlag {
-		return errors.New("Pick -local or -yubi")
+		return errors.New("pick -local or -yubi")
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -528,5 +528,5 @@ func loginAndClose(ctx context.Context, authClient VaultAuthClient, appConfig *A
 			log.Printf("closing auth client: %v", cerr)
 		}
 	}()
-	return AuthenticateAndGetToken(&RealVaultClient{Client: authClient.GetVaultClient()}, appConfig, ctx)
+	return AuthenticateAndGetToken(ctx, &RealVaultClient{Client: authClient.GetVaultClient()}, appConfig)
 }

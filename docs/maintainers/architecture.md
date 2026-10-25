@@ -11,7 +11,7 @@ main
  └── run(args)
       ├── flag.NewFlagSet  -local | -yubi | -version (ExitOnError)
       ├── -version ────────────────────────────────────────► print Version, exit 0
-      ├── mode exclusivity check                      ("Pick -local or -yubi")
+      ├── mode exclusivity check                      ("pick -local or -yubi")
       ├── os.UserHomeDir ─► LoadConfig(~/.yubivault/config.yml)
       │                        strict YAML: known keys, one document, required fields,
       │                        https:// vaultAddr only
