@@ -288,8 +288,7 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (_ *Yubikey
 		return nil, fmt.Errorf("could not configure crypto11: %w", err)
 	}
 
-	// CRITICAL: close the context on ANY error path, or the YubiKey can lock; on success the
-	// client owns it. Close's error is dropped: the pinned crypto11 (go.mod) always returns nil.
+	// CRITICAL: close the context on ANY error path (the card can lock); on success the client owns it.
 	defer func() {
 		if err != nil {
 			cryptoCtx.Close()
