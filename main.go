@@ -288,10 +288,8 @@ func CreateYubikeyVaultClient(appConfig *AppConfig, tokenPin string) (_ *Yubikey
 		return nil, fmt.Errorf("could not configure crypto11: %w", err)
 	}
 
-	// CRITICAL: Deferred cleanup ensures crypto11.Context is closed on ANY error path.
-	// On success, the context is transferred to YubikeyVaultClient which owns it.
-	// This prevents resource leaks that can lock the YubiKey. Close's error is
-	// not returned: the pinned crypto11 (see go.mod) returns nil from it on every path.
+	// CRITICAL: close the context on ANY error path, or the YubiKey can lock; on success the
+	// client owns it. Close's error is dropped: the pinned crypto11 (go.mod) always returns nil.
 	defer func() {
 		if err != nil {
 			cryptoCtx.Close()
