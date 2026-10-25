@@ -11,7 +11,7 @@ main
  └── run(args)
       ├── flag.NewFlagSet  -local | -yubi | -version (ExitOnError)
       ├── -version ────────────────────────────────────────► print Version, exit 0
-      ├── mode exclusivity check                      ("Pick -local or -yubi")
+      ├── mode exclusivity check                      ("pick -local or -yubi")
       ├── os.UserHomeDir ─► LoadConfig(~/.yubivault/config.yml)
       │                        strict YAML: known keys, one document, required fields,
       │                        https:// vaultAddr only
@@ -33,8 +33,8 @@ main
       └── fmt.Println(token) ─────────────────────────────► stdout
 ```
 
-`main` does nothing but call `run` and `log.Fatal` on error, so every `defer` in `run` (notably the
-PKCS#11 close) completes before the process exits.
+`main` sets the log flags (no timestamp), then calls `run` and `log.Fatal`s on error, so every
+`defer` in `run` (notably the PKCS#11 close) completes before the process exits.
 
 ## HTTP behaviour
 
