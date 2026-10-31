@@ -15,7 +15,7 @@ yubivault -version   # print the version and exit
 | `-version` | Print the version and exit 0. Standalone: it ignores `-local`/`-yubi` and never reads the config or the card. |
 
 Exactly one of `-local` and `-yubi` is required for a login; passing both or neither fails with
-`Pick -local or -yubi`. Positional arguments are ignored. Flag parsing uses the standard library
+`pick -local or -yubi`. Positional arguments are ignored. Flag parsing uses the standard library
 flag package with `ExitOnError`, so an unknown flag (`-foo`) exits 2 and `-h` exits 0.
 
 ## Output contract
@@ -103,7 +103,7 @@ What a failure looks like, in wall-clock terms:
 
 - A refused connection fails in about a second.
 - A blackholed address (traffic silently dropped) fails after about 11 seconds with
-  `dial tcp <addr>:8200: i/o timeout`. The error names the address that was tried, which tells a
+  `cert login: Post "<url>": dial tcp <addr>:8200: i/o timeout`. The error names the address that was tried, which tells a
   refused connection (`connection refused`) apart from an unreachable one.
 - A TLS-terminating proxy means Vault does not receive yubivault's original client-certificate handshake. Vault's listener has a forwarded-client-certificate option (`x_forwarded_for_client_cert_header`; not verified here), but yubivault does not set forwarded-certificate headers. This guide assumes Vault receives the TLS connection directly.
 
