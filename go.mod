@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/eclipse-keypont/crypto11 v1.6.8
 	github.com/hashicorp/vault-client-go v0.4.3
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/term v0.47.0
 )
 
